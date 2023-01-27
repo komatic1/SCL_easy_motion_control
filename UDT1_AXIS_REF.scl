@@ -1,0 +1,167 @@
+TYPE UDT1 // AXIS_REF - Data type for axis data
+STRUCT
+    Sample_T : REAL  := 1.000000e-002;    //Axis processing sample time [s]
+    AxisType : BOOL ;    //0=Linear; 1=Rotary
+    EncoderType : BOOL ;    //0=Incremental; 1=Absolute
+    Sim : BOOL ;    //1=Simulation on
+    AxisLimitMax : REAL  := 1.000000e+006;    //Maximum axis coordinate [u]
+    AxisLimitMin : REAL  := -1.000000e+006;    //Minimum axis coordinate [u]
+    MaxVelocity : REAL  := 1.000000e-001;    //Maximum velocity [u/s]
+    MaxAcceleration : REAL  := 1.000000e-001;    //Maximum acceleration [u/sІ]
+    MaxDeceleration : REAL  := 1.000000e-001;    //Maximum deceleration [u/sІ]
+    MonTimeTargetAppr : REAL  := 1.000000e+000;    //Monitoring time for target approach [s]
+    TargetRange : REAL  := 1.000000e+000;    //Target range [u]
+    StandstillRange : REAL  := 1.500000e+000;    //Standstill range [u]
+    MaxFollowingDist : REAL  := 5.000000e+000;    //Max. following distance [u]
+    MonitorTargetAppr : BOOL  := TRUE;    //1=Monitor target approach
+    SWLimitEnable : BOOL  := TRUE;    //1=Enable software limit switches
+    FactorP : REAL  := 1.000000e+000;    //P-Factor of position loop [1/s]
+    ManVelocity : REAL ;    //Manual velocity [u/s]
+    ManEnable : BOOL ;    //1=Enable manual mode
+    EmergencyDec : REAL  := 1.000000e+003;    //Deceleration for emergency stop [u/sІ]
+    InputModuleInAddr : INT ;    //Input address for input module (encoder connection)
+    InputModuleOutAddr : INT ;    //Output address for input module (encoder connection)
+    InputChannelNo : INT ;    //Channel no. for input module (0..n)
+    StepsPerRev : DINT  := L#1;    //Steps per encoder revolution [steps/rev]
+    DisplacementPerRev : REAL  := 1.000000e+000;    //Displacement of the axis per encoder revolution [u/rev]
+    NumberRevs : INT  := 1;    //Number of revolutions (1:Singleturn, >1:Multiturn)
+    PolarityEncoder : INT  := 1;    //Polarity of encoder (-1 or 1)
+    PositionOffset : DINT ;    //Position offset / Absolute encoder adjustment [step]
+    OutputModuleOutAddr : INT ;    //Output address for output module (drive connection)
+    OutputModuleInAddr : INT ;    //Input address for output module (drive connection)
+    OutputChannelNo : INT ;    //Channel no. for output module (0..n)
+    PolarityDrive : INT  := 1;    //Polarity of drive (-1 or 1)
+    DriveInputAtMaxVel : REAL  := 9.000000e+000;    //Reference value for max. axis velocity (>0)
+    OffsetCompensation : REAL ;    //Offset compensation [V]
+    DriveInputAt100 : REAL  := 1.000000e+001;    //Reference value for 100% rpm
+    Override : REAL  := 1.000000e+002;    //Velocity override (0..100%)   
+    ActPosition : REAL ;    //Actual position [u]
+    FollowingDistance : REAL ;    //Following distance [u]
+    RemainingDistance : REAL ;    //Remaining distance [u]
+    NomVelocity : REAL ;    //Nominal velocity of axis [u/s]
+    ActVelocity : REAL ;    //Actual velocity of axis [u/s]
+    Sync : BOOL ;    //1=Axis synchronized
+    Error : BOOL  := TRUE;    //1=Group error
+    ErrorAck : BOOL ;    //1=Group acknowledgment for errors
+    AxisState : INT  := 1;    //internal use
+    Err : STRUCT    
+     SWLimitMinExceeded : BOOL ;    //1=Min. SW limit switch exceeded
+     SWLimitMaxExceeded : BOOL ;    //1=Max. SW limit switch exceeded
+     TargetErr : BOOL ;    //1=Target beyond travel range
+     NoSync : BOOL ;    //1=Axis not synchronized
+     DirectionErr : BOOL ;    //1=Motion not allowed in direction entered
+     DataErr : BOOL ;    //1=Invalid motion FB parameter
+     StartErr : BOOL ;    //1=Start not possible in current axis state
+     DistanceErr : BOOL ;    //1=Motion is too far
+     MasterErr : BOOL ;    //1=Master axis error with hard stop or wrong axis status
+     bit09 : BOOL ;   
+     bit10 : BOOL ;   
+     bit11 : BOOL ;   
+     bit12 : BOOL ;   
+     bit13 : BOOL ;   
+     bit14 : BOOL ;   
+     bit15 : BOOL ;   
+     StoppedMotion : BOOL  := TRUE;    //1=Axis is in stop and must be acknowledged
+     EnableDriveErr : BOOL ;    //1=Drive enable missing
+     FollowingDistErr : BOOL ;    //1=Max. following distance exceeded
+     StandstillErr : BOOL ;    //1=Outside standstill range
+     TargetApproachErr : BOOL ;    //1=Target approach error
+     EncoderErr : BOOL ;    //1=Encoder error
+     OutputErr : BOOL ;    //1=Output driver error
+     ConfigErr : BOOL ;    //1=Axis data incorrectly configured
+     DriveErr : BOOL ;    //1=Drive error
+     bit25 : BOOL ;   
+     bit26 : BOOL ;   
+     bit27 : BOOL ;   
+     bit28 : BOOL ;   
+     bit29 : BOOL ;   
+     bit30 : BOOL ;   
+     bit31 : BOOL ;   
+    END_STRUCT ;   
+    Config : STRUCT    
+     Err_AxisLimit : BOOL ;    //1=Incorrect axis limits
+     Err_MaxVelocity : BOOL ;    //1=Incorrect max. velocity
+     Err_MaxAcceleration : BOOL ;    //1=Incorrect max. acceleration
+     Err_MaxDeceleration : BOOL ;    //1=Incorrect max. deceleration
+     Err_MonTimeTargetAppr : BOOL ;    //1=Incorrect monitoring time for target approach
+     Err_TargetRange : BOOL ;    //1=Incorrect target range
+     Err_StandstillRange : BOOL ;    //1=Incorrect standstill range
+     Err_MaxFollowingDist : BOOL ;    //1=Incorrect max. follwing distance
+     Err_EmergencyDec : BOOL ;    //1=Incorrect emergency deceleration
+     Err_StepsPerRev : BOOL ;    //1=Incorrect steps per encoder revolution
+     Err_DisplacementPerRev : BOOL ;    //1=Incorrect displacement per encoder revolution
+     Err_NumberRevs : BOOL ;    //1=Incorrect number of encoder revolutions
+     Err_PolarityEncoder : BOOL ;    //1=Incorrect encoder polarity
+     Err_PolarityDrive : BOOL ;    //1=Incorrect drive polarity
+     Err_DriveInputAtMaxVel : BOOL ;    //1=Incorrect reference value for max. velocity
+     Err_AxisLength : BOOL ;    //1=Incorrect axis length
+     Err_EncoderRange : BOOL ;    //1=Encoder range is not correct for axis length
+     Err_MaxVelRotaryAxis : BOOL ;    //1=Max. velocity and sample time are not correct for rotary axis length
+     Err_DriveInputAt100 : BOOL ;    //1=Incorrect reference value for 100% rpm
+    END_STRUCT ;   
+    EncoderValue : DINT ;    //Current encoder value [step]
+    RefPoint : REAL ;    //internal use
+    OutVelocity : REAL ;    //internal use
+    LastNomPosition : REAL ;    //internal use
+    LastNomVelocity : REAL ;    //internal use
+    LastNomDeceleration : REAL ;    //internal use
+    InternalNomPosition : REAL ;    //internal use
+    InternalActPos : REAL ;    //internal use
+    InternalPosOffset : REAL ;    //internal use
+    aufl : REAL ;    //internal use
+    AchsLaenge : REAL ;    //internal use
+    AchsLaenge_DI : DINT ;    //internal use
+    AbsGeberLaenge_DI : DINT ;    //internal use
+    LageIstwert_DI : DINT ;    //internal use
+    Coord : DINT ;    //internal use
+    DoneRef : BOOL ;    //internal use
+    EinInitLaeuft : BOOL ;    //internal use
+    AusInitLaeuft : BOOL ;    //internal use
+    EinQuittungLaeuft : BOOL ;    //internal use
+    AusQuittungLaeuft : BOOL ;    //internal use
+    EintreiberFahrbereit : BOOL ;    //internal use
+    ExecRef : INT ;    //internal use
+    VLastNomPosition : REAL ;    //internal use
+    VLastNomVelocity : REAL ;    //internal use
+    LastInternalPosOffset : REAL ;    //internal use
+    RundKorrektur : REAL ;    //internal use
+    LastRundKorrektur : REAL ;    //internal use
+    LengthUnit : STRING  [4 ] := 'mm';    //internal use
+    InputModuleType : STRING  [24 ] := 'IM 178-4';    //internal use
+    OutputModuleType : STRING  [24 ] := 'IM 178-4';    //internal use
+    Init : STRUCT     //Init bits for 32 FBs
+     I0 : BOOL  := TRUE;    //Init bit 0
+     I1 : BOOL  := TRUE;    //Init bit 1
+     I2 : BOOL  := TRUE;    //Init bit 2
+     I3 : BOOL  := TRUE;    //Init bit 3
+     I4 : BOOL  := TRUE;    //Init bit 4
+     I5 : BOOL  := TRUE;    //Init bit 5
+     I6 : BOOL  := TRUE;    //Init bit 6
+     I7 : BOOL  := TRUE;    //Init bit 7
+     I8 : BOOL  := TRUE;    //Init bit 8
+     I9 : BOOL  := TRUE;    //Init bit 9
+     I10 : BOOL  := TRUE;    //Init bit 10
+     I11 : BOOL  := TRUE;    //Init bit 11
+     I12 : BOOL  := TRUE;    //Init bit 12
+     I13 : BOOL  := TRUE;    //Init bit 13
+     I14 : BOOL  := TRUE;    //Init bit 14
+     I15 : BOOL  := TRUE;    //Init bit 15
+     I16 : BOOL  := TRUE;    //Init bit 16
+     I17 : BOOL  := TRUE;    //Init bit 17
+     I18 : BOOL  := TRUE;    //Init bit 18
+     I19 : BOOL  := TRUE;    //Init bit 19
+     I20 : BOOL  := TRUE;    //Init bit 20
+     I21 : BOOL  := TRUE;    //Init bit 21
+     I22 : BOOL  := TRUE;    //Init bit 22
+     I23 : BOOL  := TRUE;    //Init bit 23
+     I24 : BOOL  := TRUE;    //Init bit 24
+     I25 : BOOL  := TRUE;    //Init bit 25
+     I26 : BOOL  := TRUE;    //Init bit 26
+     I27 : BOOL  := TRUE;    //Init bit 27
+     I28 : BOOL  := TRUE;    //Init bit 28
+     I29 : BOOL  := TRUE;    //Init bit 29
+     I30 : BOOL  := TRUE;    //Init bit 30
+     I31 : BOOL  := TRUE;    //Init bit 31
+    END_STRUCT ;   
+END_STRUCT ;
+END_TYPE

@@ -1,0 +1,176 @@
+FUNCTION_BLOCK FB105
+TITLE ='Stop any motion'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : MC_Stop
+VERSION : '2.0'
+ 
+ 
+VAR_INPUT
+  Execute : BOOL ;    //Start the action at rising edge
+  Deceleration : REAL ;    //Deceleration [u/sІ]
+END_VAR
+VAR_OUTPUT
+  Busy : BOOL ;    //1=Moving
+  Done : BOOL ;    //1=Zero velocity has been reached
+  CommandAborted : BOOL ;    //1=Command was aborted by manual mode
+  Error : BOOL ;    //1=Error has occurred within FB
+END_VAR
+VAR_IN_OUT
+  Axis : UDT1 ;     //Global axis data
+  Init : BOOL  := TRUE;    //1=Initialize block
+END_VAR
+VAR
+  ziel : REAL ;    //internal use
+  b : REAL ;    //internal use
+  taHalbe : REAL ;    //internal use
+  Zustand : INT ;    //internal use
+  Coord : DINT ;    //internal use
+END_VAR
+VAR_TEMP
+  Err_DW : DWORD ;    //internal use
+  Err_w AT Err_DW : STRUCT
+   w0 : WORD;
+   w1 : WORD;
+  END_STRUCT ;  
+  Err_DW_str AT Err_DW : STRUCT
+     SWLimitMinExceeded : BOOL ;    //1=Min. SW limit switch exceeded
+     SWLimitMaxExceeded : BOOL ;    //1=Max. SW limit switch exceeded
+     TargetErr : BOOL ;    //1=Target beyond travel range
+     NoSync : BOOL ;    //1=Axis not synchronized
+     DirectionErr : BOOL ;    //1=Motion not allowed in direction entered
+     DataErr : BOOL ;    //1=Invalid motion FB parameter
+     StartErr : BOOL ;    //1=Start not possible in current axis state
+     DistanceErr : BOOL ;    //1=Motion is too far
+     MasterErr : BOOL ;    //1=Master axis error with hard stop or wrong axis status
+     bit09 : BOOL ;   
+     bit10 : BOOL ;   
+     bit11 : BOOL ;   
+     bit12 : BOOL ;   
+     bit13 : BOOL ;   
+     bit14 : BOOL ;   
+     bit15 : BOOL ;   
+     StoppedMotion : BOOL ;    //1=Axis is in stop and must be acknowledged
+     EnableDriveErr : BOOL ;    //1=Drive enable missing
+     FollowingDistErr : BOOL ;    //1=Max. following distance exceeded
+     StandstillErr : BOOL ;    //1=Outside standstill range
+     TargetApproachErr : BOOL ;    //1=Target approach error
+     EncoderErr : BOOL ;    //1=Encoder error
+     OutputErr : BOOL ;    //1=Output driver error
+     ConfigErr : BOOL ;    //1=Axis data incorrectly configured
+     DriveErr : BOOL ;    //1=Drive error
+     bit25 : BOOL ;   
+     bit26 : BOOL ;   
+     bit27 : BOOL ;   
+     bit28 : BOOL ;    
+     bit29 : BOOL ;   
+     bit30 : BOOL ;   
+     bit31 : BOOL ;   
+  END_STRUCT ; 
+ 
+END_VAR
+BEGIN
+ 
+IF Init
+THEN
+    Init:=false;
+    Done:=false;
+    Busy:=false;
+    CommandAborted:=false;
+    Error:=false;
+    Zustand:=1;
+END_IF;
+ 
+IF Zustand=1 THEN
+    IF NOT Busy AND Execute THEN
+        Busy:=true;
+        Done:=false;
+        CommandAborted:=false;
+        Error:=false;
+        taHalbe:=Axis.Sample_T*0.5;
+        Coord:=Axis.Coord+1;
+        b:=Axis.MaxDeceleration;
+        IF Deceleration>0.0 THEN
+            b:=Deceleration;
+            IF Axis.LastNomDeceleration>b AND Axis.LastNomVelocity<>0.0 THEN
+                b:=Axis.LastNomDeceleration;
+            END_IF;
+        END_IF;
+        IF Axis.AxisState=1 OR
+          (Axis.AxisState>=6 AND Axis.AxisState<=8) OR
+          Axis.ManEnable
+        THEN
+            Axis.Err.StartErr:=true;
+            Axis.Error:=true;
+            Error:=true;
+            Zustand:=4;
+        ELSE
+            Zustand:=2;
+            Axis.Coord:=Coord;
+            Axis.AxisState:=6;
+            Axis.LastNomDeceleration:=b;
+            IF Axis.LastNomVelocity<0.0 THEN
+                b:=-b;
+            END_IF;
+            ziel:=Axis.LastNomVelocity*Axis.LastNomVelocity*0.5/b+Axis.LastNomPosition;
+            IF Axis.RemainingDistance<>0.0 THEN
+                Axis.RemainingDistance:=Axis.InternalNomPosition-Axis.LastNomPosition+Axis.RemainingDistance;
+            END_IF;
+        END_IF; 
+    END_IF;
+END_IF;   
+ 
+IF Zustand=2 OR Zustand=3 THEN
+    IF Axis.Error THEN
+        Err_DW_str:=Axis.Err;
+        IF Err_w.w1<>w#16#0 THEN
+           Zustand:=4;
+           Error:=true;
+        END_IF;
+    END_IF;
+    IF Axis.ManEnable THEN
+       Zustand:=4;
+       CommandAborted:=true;
+    END_IF;
+END_IF;   
+ 
+IF Zustand=2 THEN
+    Axis.NomVelocity:=Axis.LastNomVelocity-b*Axis.Sample_T;
+    IF Axis.NomVelocity*Axis.LastNomVelocity<=0.0 THEN
+        Axis.NomVelocity:=0.0;
+    END_IF;
+    Axis.InternalNomPosition:=(Axis.LastNomVelocity+Axis.NomVelocity)*taHalbe+Axis.LastNomPosition;
+    IF Axis.NomVelocity=0.0 THEN
+        Axis.InternalNomPosition:=ziel;
+        Zustand:=3;
+    END_IF;
+    IF Axis.RemainingDistance<>0.0 THEN
+        Axis.RemainingDistance:=Axis.RemainingDistance-(Axis.InternalNomPosition-Axis.LastNomPosition);
+    END_IF;
+ 
+ELSIF Zustand=3 THEN 
+    IF Axis.AxisState=2 THEN
+        IF NOT Axis.Err.TargetApproachErr THEN
+            Done:=true;
+        END_IF;
+        Busy:=false;
+        Zustand:=5;
+    ELSE
+        Axis.AxisState:=8;
+    END_IF;     
+ 
+ELSIF Zustand=4 THEN     
+        Busy:=false;
+        Zustand:=5;
+ 
+ELSIF Zustand=5 THEN     
+    IF NOT Execute THEN
+        Done:=false;
+        CommandAborted:=false;
+        Error:=false;
+        Busy:=false;
+        Zustand:=1;
+    END_IF;
+END_IF;
+ 
+END_FUNCTION_BLOCK

@@ -1,0 +1,430 @@
+FUNCTION_BLOCK FB141
+TITLE ='Electronic gear (2 axes)'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : MC_Gear
+VERSION : '2.0'
+ 
+ 
+VAR_INPUT
+  Execute : BOOL ;    //Start the motion at rising edge
+  RatioNumerator : REAL  := 1.000000e+000;    //Gear ratio numerator (Slave / Master)
+  RatioDenominator : INT  := 1;    //Gear ratio denominator (Slave / Master)
+  Velocity : REAL  := 1.000000e-001;    //Maximum velocity [u/s]
+  Acceleration : REAL  := 1.000000e-001;    //Acceleration [u/sІ]
+  Deceleration : REAL  := 1.000000e-001;    //Deceleration [u/sІ]
+END_VAR
+VAR_OUTPUT
+  Busy : BOOL ;    //1=MC_GearIn is active
+  InGear : BOOL ;    //1=Commanded gearing completed
+  Coupled : BOOL ;    //1=Slave axis coupled to master axis
+  CommandAborted : BOOL ;    //1=Motion was interrupted by a motion FB on the same axis
+  Error : BOOL ;    //1=Error has occurred within FB
+END_VAR
+VAR_IN_OUT
+  Master : UDT1 ;     //Global axis data: master axis
+  Slave : UDT1 ;     //Global axis data: slave axis
+  Init : BOOL  := TRUE;    //1=Initialize block
+END_VAR
+VAR
+  v_max : REAL ;    //internal use
+  v_max_bool AT v_max : ARRAY[0..31] OF BOOL;
+  a_1 : REAL ;    //internal use
+  a_1_bool AT a_1 : ARRAY[0..31] OF BOOL;
+  b : REAL ;    //internal use
+  b_bool AT b : ARRAY[0..31] OF BOOL; 
+  ta : REAL ;    //internal use
+  taHalbe : REAL ;    //internal use
+  GF : REAL  := 1.000000e+000;    //internal use
+  Richtung : INT ;    //internal use
+  StartPosition_M : REAL ;    //internal use
+  StartPosition_S : REAL ;    //internal use
+  Rundkorrektur_M : REAL ;    //internal use
+  Zustand : INT ;    //internal use
+  Bereich : INT ;    //internal use
+  Coord : DINT ;    //internal use
+  Grenze : REAL ;    //internal use
+  aufl : REAL ;    //internal use
+  InGear_alt : BOOL ;    //internal use
+END_VAR
+VAR_TEMP
+  vk : REAL ;    //internal use
+  vk_bool AT vk : ARRAY[0..31] OF BOOL;
+  sk : REAL ;    //internal use
+  vk1 : REAL ;    //internal use
+  sk1 : REAL ;    //internal use
+  vkM : REAL ;    //internal use
+  skM : REAL ;    //internal use
+  vk1M : REAL ;    //internal use
+  sk1M : REAL ;    //internal use
+  vz : REAL ;    //internal use
+  vz_bool AT vz : ARRAY[0..31] OF BOOL;
+  Bremspunkt : REAL ;    //internal use
+  vv : REAL ;    //internal use
+  vkS : REAL ;    //internal use
+  vkS_bool AT vkS : ARRAY[0..31] OF BOOL;
+  vk1S : REAL ;    //internal use
+  vk1S_bool AT vk1S : ARRAY[0..31] OF BOOL;
+  v_over : REAL ;    //internal use
+  v_over_bool AT v_over : ARRAY[0..31] OF BOOL;
+  Hilf_R : REAL ;    //internal use
+  Hilf_DI : DINT ;    //internal use
+  RundKorrektur_DI : DINT ;    //internal use
+  Err_DW : DWORD ;    //internal use
+  Err_w AT Err_DW : STRUCT
+   w0 : WORD;
+   w1 : WORD;
+  END_STRUCT ;  
+ 
+    Err_DW_str AT Err_DW : STRUCT
+     SWLimitMinExceeded : BOOL ;    //1=Min. SW limit switch exceeded
+     SWLimitMaxExceeded : BOOL ;    //1=Max. SW limit switch exceeded
+     TargetErr : BOOL ;    //1=Target beyond travel range
+     NoSync : BOOL ;    //1=Axis not synchronized
+     DirectionErr : BOOL ;    //1=Motion not allowed in direction entered
+     DataErr : BOOL ;    //1=Invalid motion FB parameter
+     StartErr : BOOL ;    //1=Start not possible in current axis state
+     DistanceErr : BOOL ;    //1=Motion is too far
+     MasterErr : BOOL ;    //1=Master axis error with hard stop or wrong axis status
+     bit09 : BOOL ;   
+     bit10 : BOOL ;   
+     bit11 : BOOL ;   
+     bit12 : BOOL ;   
+     bit13 : BOOL ;   
+     bit14 : BOOL ;   
+     bit15 : BOOL ;   
+     StoppedMotion : BOOL ;    //1=Axis is in stop and must be acknowledged
+     EnableDriveErr : BOOL ;    //1=Drive enable missing
+     FollowingDistErr : BOOL ;    //1=Max. following distance exceeded
+     StandstillErr : BOOL ;    //1=Outside standstill range
+     TargetApproachErr : BOOL ;    //1=Target approach error
+     EncoderErr : BOOL ;    //1=Encoder error
+     OutputErr : BOOL ;    //1=Output driver error
+     ConfigErr : BOOL ;    //1=Axis data incorrectly configured
+     DriveErr : BOOL ;    //1=Drive error
+     bit25 : BOOL ;   
+     bit26 : BOOL ;   
+     bit27 : BOOL ;   
+     bit28 : BOOL ;   
+     bit29 : BOOL ;   
+     bit30 : BOOL ;   
+     bit31 : BOOL ;   
+  END_STRUCT ;
+ 
+END_VAR
+BEGIN
+ 
+IF Init THEN
+    Init:=false;
+    InGear:=false;
+    InGear_alt:=false;
+    Coupled:=false;
+    Busy:=false;
+    CommandAborted:=false;
+    Error:=false;
+    Zustand:=1;
+    Bereich:=5;
+    Richtung:=0;
+    Rundkorrektur_M:=0.0;
+    ta:=Slave.Sample_T;
+    taHalbe:=ta*0.5;
+    aufl:=Slave.aufl;
+    Grenze:=aufl*1.6777216e+007;
+END_IF;
+ 
+IF Zustand=1 THEN
+    IF NOT Busy AND Execute THEN
+        Busy:=true;
+        InGear:=false;
+        InGear_alt:=false;
+        Coupled:=false;
+        CommandAborted:=false;
+        Error:=false;
+        Richtung:=0;
+        Coord:=Slave.Coord+1;
+        a_1:=Slave.MaxAcceleration;
+        b:=Slave.MaxDeceleration;
+        v_max:=Slave.MaxVelocity;
+        IF v_max>Velocity THEN v_max:=Velocity; END_IF;
+        IF a_1>Acceleration THEN a_1:=Acceleration; END_IF;
+        IF b>Deceleration THEN b:=Deceleration; END_IF;
+ 
+        Slave.Err.StartErr:=Slave.AxisState=6 OR
+                             Slave.Error OR                             
+                             Slave.AxisState=8 OR
+                             Slave.ManEnable OR
+                             Master.AxisState=7 OR
+                             Master.AxisState=1 OR  
+                             Master.AxisState=9 OR  
+                             Master.ManEnable;
+        IF NOT Slave.Err.StartErr  THEN
+            Slave.Err.DataErr:=  (v_max<=0.0 OR
+                                 a_1<=0.0 OR
+                                 b<=0.0) OR 
+                                 RatioDenominator<=0 OR
+                                 RatioNumerator=0.0 OR
+                                (Slave.LastNomDeceleration<>b AND
+                                 Slave.LastNomVelocity<>0.0);
+        END_IF;
+        Err_DW_str:=Slave.Err; 
+        IF Err_DW<>DW#16#0 THEN
+            Slave.Error:=true;
+            Error:=true;
+            Zustand:=4;
+        ELSE 
+            GF:=RatioNumerator/DINT_TO_REAL(RatioDenominator);
+            sk:=Slave.LastNomPosition;
+            vk:=Slave.LastNomVelocity;
+            IF Slave.AxisType THEN
+                Hilf_DI:=Slave.LageIstwert_DI;
+                Slave.LageIstwert_DI:=(Slave.LageIstwert_DI-Slave.PositionOffset) MOD
+                                      Slave.AchsLaenge_DI + Slave.PositionOffset;
+                Hilf_DI:=Hilf_DI-Slave.LageIstwert_DI; 
+                Hilf_R:=DINT_TO_REAL(Hilf_DI)*aufl;                   
+                sk:=sk-Hilf_R;
+                Slave.RundKorrektur:=Slave.RundKorrektur+Hilf_R;
+                Slave.InternalActPos:=Slave.InternalActPos-Hilf_R;
+            END_IF;
+            Slave.InternalPosOffset:=Slave.InternalPosOffset+sk;
+            Slave.LastInternalPosOffset:=Slave.LastInternalPosOffset+sk;
+            Slave.InternalActPos:=Slave.InternalActPos-sk;
+            Slave.VLastNomPosition:=Slave.VLastNomPosition-Slave.LastNomPosition;
+            Slave.LastNomPosition:=0.0;
+           
+            StartPosition_S:=0.0;
+            StartPosition_M:=Master.VLastNomPosition+Master.LastInternalPosOffset;
+            Rundkorrektur_M:=-Master.RundKorrektur-Master.LastRundKorrektur;
+ 
+            vkM:=Master.VLastNomVelocity;
+            vk1M:=Master.LastNomVelocity;
+            vkS:=vkM*GF;
+            vk1S:=vk1M*GF;
+            skM:=StartPosition_M;
+            Slave.LastNomDeceleration:=b;
+           
+            vz_bool[7]:=vk_bool[7];
+            IF vk=0.0 THEN
+                IF vk1S<>0.0 THEN
+                    vz_bool[7]:=vk1S_bool[7];
+                ELSE
+                    IF vkS<>0.0 THEN
+                        vz_bool[7]:=vkS_bool[7];
+                    ELSE
+                        vz_bool[7]:=false;
+                    END_IF;
+                END_IF;
+            END_IF;
+ 
+            a_1_bool[7]:=vz_bool[7];
+            b_bool[7]:=vz_bool[7];
+            v_max_bool[7]:=vz_bool[7];
+            Richtung:=1;
+ 
+            IF vz_bool[7] THEN
+                Richtung:=-1;
+            END_IF;
+            Zustand:=2;
+            Slave.Coord:=Coord;
+            Slave.AxisState:=10;
+            Slave.RemainingDistance:=0.0;
+        END_IF;
+    END_IF;
+END_IF;
+ 
+IF Zustand=2 OR Zustand=3 THEN
+    vk:=Slave.LastNomVelocity;
+    sk:=Slave.LastNomPosition;
+    IF Richtung<>0 THEN
+        Bremspunkt:=vk*vk*0.5/b+sk;
+        IF ABS(Bremspunkt)>=Grenze
+        THEN
+            Slave.Error:=true;
+            Slave.Err.DistanceErr:=true;
+        END_IF;
+        IF NOT Slave.AxisType AND Slave.Sync AND Slave.SWLimitEnable
+        THEN
+            Bremspunkt:=Bremspunkt+Slave.InternalPosOffset;
+            IF (Bremspunkt>=Slave.AxisLimitMax AND Richtung=1) OR
+               (Richtung=-1 AND Bremspunkt<=Slave.AxisLimitMin)
+            THEN
+                Slave.Error:=true;
+                Slave.Err.DistanceErr:=true;
+            END_IF;
+        END_IF;
+    END_IF;
+    vkM:=Master.VLastNomVelocity;      
+    vk1M:=Master.LastNomVelocity;
+    skM:=Master.VLastNomPosition+Master.LastInternalPosOffset;
+    sk1M:=Master.LastNomPosition+Master.LastInternalPosOffset;
+    IF Master.AxisType THEN
+        IF Master.RundKorrektur<>0.0 THEN
+            Rundkorrektur_M:=Rundkorrektur_M+Master.RundKorrektur;
+            Master.RundKorrektur:=0.0;
+        END_IF;
+        Rundkorrektur_M:=Rundkorrektur_M+Master.LastRundKorrektur;
+    END_IF;
+    IF  Master.AxisState=1 OR
+        Master.AxisState=7 OR
+        Master.AxisState=9 OR
+        Master.ManEnable
+    THEN
+        Slave.Err.MasterErr:=true;
+        Slave.Error:=true;
+    END_IF;
+    IF Slave.Error
+    THEN
+        Err_DW_str:=Slave.Err;
+        Error:=true;
+        InGear:=false;
+        IF Err_w.w1<>W#16#0 THEN
+            Zustand:=4;
+        ELSE
+            vkM:=0.0;
+            vk1M:=0.0;
+            sk1M:=skM;
+            StartPosition_M:=skM;
+            Richtung:=0;
+        END_IF;
+    END_IF;
+    IF Slave.Coord<>Coord OR Slave.ManEnable
+    THEN
+        CommandAborted:=true;
+        Zustand:=4;
+    END_IF;
+END_IF;
+ 
+IF Zustand=2 THEN
+    vkS:=vkM*GF;
+    vk1S:=vk1M*GF;
+    v_over:=vk1S;
+    IF ABS(v_over)>ABS(v_max) THEN
+        v_over:=v_max;
+    END_IF;
+    IF vk=0.0 AND Richtung<>0 THEN
+        vz_bool[7]:=vk1S_bool[7];
+        IF vk1S=0.0 THEN
+            IF vkS<>0.0 THEN
+                vz_bool[7]:=vkS_bool[7];
+            ELSE
+                vz_bool[7]:=false;
+            END_IF;
+        END_IF;
+        a_1_bool[7]:=vz_bool[7];
+        b_bool[7]:=vz_bool[7];
+        v_max_bool[7]:=vz_bool[7];
+        v_over_bool[7]:=vz_bool[7];
+        Richtung:=1;
+        IF vz_bool[7] THEN Richtung:=-1; END_IF;
+    END_IF;
+   
+    IF vk1S<>0.0 THEN
+        vv:=vk/vk1S;
+    ELSE
+        vv:=2.0;
+    END_IF;
+    IF Richtung=0 THEN
+        vv:=2.0;
+    END_IF;
+    IF vv<0.0 THEN
+        Bereich:=4;
+        vk1:=vk-b*ta;
+        IF vk1*vk<=0.0 OR (vk=0.0  AND v_over=0.0) THEN
+            vk1:=0.0;
+        END_IF;
+    ELSIF vv<1.0 THEN
+        Bereich:=1;
+        vk1:=a_1*ta+vk;
+        IF (vk1-v_over) * (vk-v_over) <=0.0 THEN
+            vk1:=v_over;
+        END_IF;
+        IF ABS(vk1)>=ABS(vk1S) THEN
+            Bereich:=7;
+        END_IF;
+    ELSIF vv=1.0 THEN
+        Bereich:=7;
+        vk1:=v_over;
+    ELSE
+        Bereich:=6;
+        vk1:=vk-b*ta;
+        IF vk1*vk<=0.0 OR (vk=0.0  AND v_over=0.0) THEN
+            vk1:=0.0;
+        END_IF;
+        IF (vk1-v_over) * (vk-v_over)<=0.0 AND vk<>v_over THEN
+            vk1:=v_over;
+        END_IF;
+        IF ABS(vk1)<=ABS(v_over) AND Richtung<>0 THEN
+            Bereich:=7;
+        END_IF;
+    END_IF;
+ 
+    IF Bereich=7 THEN
+        vk1:=v_over;
+        sk1:=(sk1M-StartPosition_M+Rundkorrektur_M)*GF+StartPosition_S;
+        Coupled:=true;
+        InGear:=true;
+    ELSE
+        sk1:=(vk+vk1)*taHalbe+sk;
+        StartPosition_M:=sk1M;
+        StartPosition_S:=sk1;
+        Rundkorrektur_M:=0.0;
+        Coupled:=false;
+    END_IF;
+    IF Bereich=6 THEN
+        IF vk1=0.0 AND Error THEN
+            Zustand:=3;
+            Bereich:=5;
+        END_IF;
+    END_IF;
+    IF InGear THEN
+        IF Execute THEN
+            InGear_alt:=true;
+        ELSIF NOT InGear_alt THEN
+            InGear_alt:=true;
+        ELSE
+            InGear:=false;
+        END_IF;
+    END_IF;
+    IF Slave.AxisType THEN 
+        IF ABS(sk1)>=Slave.AchsLaenge THEN
+            RundKorrektur_DI:=TRUNC(sk1/Slave.AchsLaenge);
+            Slave.LageIstwert_DI:=Slave.LageIstwert_DI-RundKorrektur_DI*Slave.AchsLaenge_DI;
+            Slave.RundKorrektur:=DINT_TO_REAL(RundKorrektur_DI)*Slave.AchsLaenge;
+            sk1:=sk1-Slave.RundKorrektur;
+            Slave.LastNomPosition:=Slave.LastNomPosition-Slave.RundKorrektur;
+            Slave.VLastNomPosition:=Slave.VLastNomPosition-Slave.RundKorrektur;
+            Slave.InternalActPos:=Slave.InternalActPos-Slave.RundKorrektur;
+            StartPosition_S:=sk1;
+            StartPosition_M:=sk1M;
+            Rundkorrektur_M:=0.0;
+        END_IF;
+    END_IF;
+    Slave.InternalNomPosition:=sk1;  
+    Slave.NomVelocity:=vk1;
+ELSIF Zustand=3 THEN 
+    IF Slave.AxisState=2 THEN
+        Busy:=false;
+        Coupled:=false;
+        Zustand:=5;
+    ELSIF Error THEN
+        Slave.AxisState:=8;
+    ELSE   
+        Slave.AxisState:=5;
+    END_IF;
+   
+ELSIF Zustand=4 THEN     
+        Busy:=false;
+        InGear:=false;
+        Coupled:=false;
+        Zustand:=5;
+ 
+ELSIF Zustand=5 THEN     
+    IF NOT Execute THEN
+        InGear:=false;
+        Coupled:=false;
+        CommandAborted:=false;
+        Error:=false;
+        Busy:=false;
+        Zustand:=1;
+    END_IF;
+END_IF;
+END_FUNCTION_BLOCK

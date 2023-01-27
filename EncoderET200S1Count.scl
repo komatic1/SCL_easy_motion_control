@@ -1,0 +1,376 @@
+FUNCTION_BLOCK FB126
+TITLE ='Input driver for ET200S 1Count'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : Enc1CTR
+VERSION : '2.1'
+ 
+ 
+VAR_INPUT
+  EncErr : BOOL ;    //1=Encoder error
+  DOut_1 : BOOL ;    //Digital output 1
+  DOut_2 : BOOL ;    //Digital output 2
+END_VAR
+VAR_OUTPUT
+  DIn : BOOL ;    //Digital input
+END_VAR
+VAR_IN_OUT
+  Axis : UDT1 ;
+  Init : BOOL  := TRUE;    //1=Initialize block
+END_VAR
+VAR
+  Status : STRUCT    
+   STS_LOAD : BOOL ;    //1=Load function active
+   ERR_LOAD : BOOL ;    //1=Load function error
+   RES_STS_A : BOOL ;    //1=Resetting of status bit active
+   ERR_ENCODER : BOOL ;    //(1COUNT5V only) 1=Short circuit / wire break of the sensor-signal
+   ERR_DO2 : BOOL ;    //(1COUNT5V only) 1=DO2: Short circuit / wire break / overtemperature
+   ERR_PARA : BOOL ;    //1=Parameter assignment error
+   ERR_DO1 : BOOL ;    //DO1: 1=Short circuit / wire break / overtemperature
+   ERR_24V : BOOL ;    //1=Short circuit of the sensor supply
+   STS_GATE : BOOL ;    //Internal gate status
+   STS_DI : BOOL ;    //DI status
+   bit18 : BOOL ;   
+   STS_DO1 : BOOL ;    //DO1 status
+   STS_DO2 : BOOL ;    //DO2 status
+   bit21 : BOOL ;   
+   STS_C_UP : BOOL ;    //Up direction status
+   STS_C_DN : BOOL ;    //Down direction status
+   STS_SYN : BOOL ;    //Synchronization status
+   bit09 : BOOL ;   
+   bit10 : BOOL ;   
+   STS_CMP1 : BOOL ;    //Comparator status 1
+   STS_CMP2 : BOOL ;    //Comparator status 2
+   STS_OFLW : BOOL ;    //Upper count limit
+   STS_UFLW : BOOL ;    //Lower count limit
+   STS_ND : BOOL ;    //Zero-crossing in the count range in counting without a main counting direction
+   byte3 : BYTE ;   
+  END_STRUCT ;   
+  Status_dw AT Status : DWORD;
+  GeberAlt_DI : DINT ;    //internal use
+  Addr_ActPos_DI : INT ;    //internal use
+  Addr_Status : INT ;    //internal use
+  Addr_LoadVal_DI : INT ;    //internal use
+  Addr_Steuer : INT ;    //internal use
+  Richtungsanpassung : INT  := 1;    //internal use
+  v_Faktor : REAL ;    //internal use
+  MaxZahl : DINT ;    //internal use
+  MaxZahlHalb : DINT ;    //internal use
+  PASteuer : WORD ;    //internal use #AJ
+  PASteuer_b AT PASteuer : ARRAY[0..15] OF BOOL;
+  RefPointInt : REAL ;    //internal use
+  LoadVal_DW : DWORD ;    //internal use
+  EncoderZustand : INT ;    //internal use
+  RefZustand : INT ;    //internal use
+  aufl : REAL ;    //internal use
+  EncErr_alt : BOOL ;    //internal use
+  Taktsynchron : BOOL ;    //internal use
+END_VAR
+VAR_TEMP
+  Geber_DI : DINT ;    //internal use
+  LageDiff_DI : DINT ;    //internal use
+  Addr_InChannel : INT ;    //internal use
+  Addr_OutChannel : INT ;    //internal use
+  TruncKorr : REAL ;    //internal use
+  TruncKorr_DI : DINT ;    //internal use
+  Err_DW : DWORD ;    //internal use
+  Err_DW_str AT Err_DW : STRUCT
+     SWLimitMinExceeded : BOOL ;    //1=Min. SW limit switch exceeded
+     SWLimitMaxExceeded : BOOL ;    //1=Max. SW limit switch exceeded
+     TargetErr : BOOL ;    //1=Target beyond travel range
+     NoSync : BOOL ;    //1=Axis not synchronized
+     DirectionErr : BOOL ;    //1=Motion not allowed in direction entered
+     DataErr : BOOL ;    //1=Invalid motion FB parameter
+     StartErr : BOOL ;    //1=Start not possible in current axis state
+     DistanceErr : BOOL ;    //1=Motion is too far
+     MasterErr : BOOL ;    //1=Master axis error with hard stop or wrong axis status
+     bit09 : BOOL ;   
+     bit10 : BOOL ;   
+     bit11 : BOOL ;   
+     bit12 : BOOL ;   
+     bit13 : BOOL ;   
+     bit14 : BOOL ;   
+     bit15 : BOOL ;   
+     StoppedMotion : BOOL ;    //1=Axis is in stop and must be acknowledged
+     EnableDriveErr : BOOL ;    //1=Drive enable missing
+     FollowingDistErr : BOOL ;    //1=Max. following distance exceeded
+     StandstillErr : BOOL ;    //1=Outside standstill range
+     TargetApproachErr : BOOL ;    //1=Target approach error
+     EncoderErr : BOOL ;    //1=Encoder error
+     OutputErr : BOOL ;    //1=Output driver error
+     ConfigErr : BOOL ;    //1=Axis data incorrectly configured
+     DriveErr : BOOL ;    //1=Drive error
+     bit25 : BOOL ;   
+     bit26 : BOOL ;   
+     bit27 : BOOL ;   
+     bit28 : BOOL ;   
+     bit29 : BOOL ;   
+     bit30 : BOOL ;   
+     bit31 : BOOL ;   
+  END_STRUCT ; 
+ 
+  SFCErr : INT ;    //Rьckgabewert des SFC6 (RD_SINFO) lokal, da keine relevante Info
+  TOP_SI : STRUCT    
+   EV_CLASS : BYTE ;   
+   EV_NUM : BYTE ;   
+   PRIORITY : BYTE ;   
+   NUM : BYTE ;   
+   TYP2_3 : BYTE ;   
+   TYP1 : BYTE ;   
+   ZI1 : WORD ;   
+   ZI2_3 : DWORD ;   
+  END_STRUCT ;   
+  START_UP_SI : STRUCT    
+   EV_CLASS : BYTE ;   
+   EV_NUM : BYTE ;   
+   PRIORITY : BYTE ;   
+   NUM : BYTE ;   
+   TYP2_3 : BYTE ;   
+   TYP1 : BYTE ;   
+   ZI1 : WORD ;   
+   ZI2_3 : DWORD ;   
+  END_STRUCT ;   
+  Sim : BOOL ;    //internal use
+END_VAR
+BEGIN
+ 
+Sim:=Axis.Sim;
+ 
+ 
+IF NOT Init AND NOT EncErr AND EncErr_alt THEN
+    Init:=true;
+    Axis.Err.EncoderErr:=true;
+    Axis.Error:=true;
+END_IF;
+ 
+IF Init THEN
+    Addr_InChannel:=Axis.InputModuleInAddr;
+    Addr_Status:=Addr_InChannel+4;
+    Addr_ActPos_DI:=Addr_InChannel;
+    Addr_OutChannel:=Axis.InputModuleOutAddr;
+    Addr_LoadVal_DI:=Addr_OutChannel;
+    Addr_Steuer:=Addr_LoadVal_DI+4;
+    Status_dw:=DW#16#0;
+    PASteuer:=W#16#0;
+    Axis.EinInitLaeuft:=true;
+    Axis.EinQuittungLaeuft:=false;
+    Axis.EintreiberFahrbereit:=false;
+    EncErr_alt:=false;
+    Axis.DoneRef:=false;
+    Axis.ExecRef:=0;
+    RefPointInt:=Axis.RefPoint;
+    aufl:=Axis.aufl;
+    v_Faktor:=aufl/Axis.Sample_T;
+    Richtungsanpassung:=Axis.PolarityEncoder;
+    Axis.EncoderType:=false;
+    Axis.Sync:=false;
+    EncoderZustand:=0;
+   
+        SFCErr:=RD_SINFO(TOP_SI :=  TOP_SI
+             ,START_UP_SI :=  START_UP_SI
+             );
+   
+    SFCErr:=BYTE_TO_INT(TOP_SI.NUM);
+    Taktsynchron:=SFCErr>=61 AND SFCErr<=64;
+    LoadVal_DW:=DW#16#0;
+   
+    IF NOT (Sim OR EncErr) THEN
+        IF Taktsynchron THEN
+            QD[Addr_LoadVal_DI]:=LoadVal_DW;
+        ELSE
+            PQD[Addr_LoadVal_DI]:=LoadVal_DW;
+        END_IF;
+    END_IF;   
+    RefZustand:=0;
+ END_IF;    
+ 
+IF Sim OR EncErr THEN
+    PASteuer:=W#16#0;
+    EncoderZustand:=4;
+    Axis.EinInitLaeuft:=false;
+ELSE     
+    IF Taktsynchron THEN
+        Status_dw:=ID[Addr_Status];
+        Axis.EncoderValue:=DWORD_TO_DINT(ID[Addr_ActPos_DI]);
+    ELSE
+        Status_dw:=PID[Addr_Status];
+        Axis.EncoderValue:=DWORD_TO_DINT(PID[Addr_ActPos_DI]);
+    END_IF; 
+END_IF;     
+ 
+IF EncErr THEN
+    Status_dw:=DW#16#0;
+END_IF;
+ 
+Geber_DI:=Axis.EncoderValue;
+DIn:=Status.STS_DI;   
+IF EncoderZustand<>4 OR Init THEN
+    GeberAlt_DI:=Geber_DI;
+    Axis.LageIstwert_DI:=Geber_DI;
+    Axis.PositionOffset:=Geber_DI;
+    Axis.InternalNomPosition:=Axis.InternalActPos;
+    Axis.LastNomPosition:=Axis.InternalActPos;
+    Axis.VLastNomPosition:=Axis.InternalActPos;
+    Init:=false;
+END_IF;     
+ 
+IF EncoderZustand=4 THEN
+    IF EncErr THEN
+        Axis.Err.EncoderErr:=true;
+        Axis.Error:=true;
+        EncErr_alt:=true;
+        Axis.Sync:=false;
+    END_IF;   
+    IF Status.ERR_ENCODER OR
+       Status.ERR_DO2 OR
+       Status.ERR_PARA OR
+       Status.ERR_DO1 OR
+       Status.ERR_24V
+    THEN
+        Axis.Err.EncoderErr:=true;
+        Axis.Error:=true;
+        Axis.Sync:=false;
+        IF NOT PASteuer_b[7] THEN
+            PASteuer_b[7]:=Axis.ErrorAck;
+            Axis.EinQuittungLaeuft:=Axis.ErrorAck;
+        END_IF;
+    ELSE
+        PASteuer_b[7]:=false;
+        Axis.EinQuittungLaeuft:=false;
+    END_IF; 
+ 
+    IF NOT EncErr THEN
+        IF Axis.ExecRef=2 THEN
+            IF RefZustand=0 THEN
+                IF Status.STS_DI THEN
+                    LoadVal_DW:=DINT_TO_DWORD(Geber_DI);
+                    RefZustand:=5;
+                ELSE
+                    IF Sim THEN
+                        RefZustand:=2;
+                    ELSE
+                        PASteuer_b[2]:=true;
+                        RefZustand:=1;
+                    END_IF;
+                END_IF;
+            ELSIF RefZustand=1 THEN
+                IF Status.RES_STS_A THEN
+                    PASteuer_b[2]:=false;
+                    RefZustand:=2;
+                END_IF;
+            ELSIF RefZustand=2 THEN
+                LoadVal_DW:=DINT_TO_DWORD(Geber_DI) XOR DW#16#50000000;
+                LoadVal_DW:=LoadVal_DW AND DW#16#F0000000;
+                LoadVal_DW:=LoadVal_DW OR DW#16#2000000;
+                IF Sim THEN
+                    RefZustand:=5;
+                ELSE
+                    IF Taktsynchron THEN
+                        QD[Addr_LoadVal_DI]:=LoadVal_DW;
+                    ELSE
+                        PQD[Addr_LoadVal_DI]:=LoadVal_DW;
+                    END_IF;
+                    PASteuer_b[9]:=true;
+                    RefZustand:=3;
+                END_IF;
+            ELSIF RefZustand=3 THEN
+                IF Status.STS_LOAD THEN
+                    PASteuer_b[9]:=false;
+                    RefZustand:=4;
+                END_IF;
+               
+            ELSIF RefZustand=4 THEN
+                IF NOT Status.STS_LOAD THEN
+                    PASteuer_b[1]:=true;
+                    RefZustand:=5;
+                END_IF;
+            ELSIF RefZustand=5 THEN
+                IF (LoadVal_DW AND DW#16#F0000000) = (DINT_TO_DWORD(Geber_DI) AND DW#16#F0000000) THEN
+                    Axis.DoneRef:=true;
+                    Axis.InternalPosOffset:=Axis.InternalPosOffset-DINT_TO_REAL(Axis.LageIstwert_DI-Axis.PositionOffset)*aufl;
+                    Axis.InternalPosOffset:=Axis.InternalPosOffset-RefPointInt+Axis.RefPoint;
+                    RefPointInt:=Axis.RefPoint;
+                    Axis.PositionOffset:=DWORD_TO_DINT(LoadVal_DW);
+                    Axis.LageIstwert_DI:=DWORD_TO_DINT(LoadVal_DW);
+                    GeberAlt_DI:=DWORD_TO_DINT(LoadVal_DW);
+                    PASteuer_b[1]:=false;
+                    RefZustand:=0;                   
+                ELSE
+                    Axis.EintreiberFahrbereit:=true;
+                END_IF;
+            END_IF;
+        ELSIF Axis.ExecRef=1 THEN
+            RefPointInt:=Axis.RefPoint;
+            Axis.InternalPosOffset:=RefPointInt;
+            Axis.InternalNomPosition:=0.0;
+            Axis.LastNomPosition:=0.0;
+            Axis.LageIstwert_DI:=Geber_DI;
+            Axis.PositionOffset:=Geber_DI;
+            Axis.DoneRef:=true;
+        ELSE
+            Axis.DoneRef:=false;
+            Axis.EintreiberFahrbereit:=false;
+            PASteuer_b[1]:=false;
+            RefZustand:=0;
+        END_IF;
+    END_IF;
+ELSIF EncoderZustand=0 THEN
+    IF NOT Status.STS_LOAD THEN
+        PASteuer_b[8]:=true;
+        EncoderZustand:=1;
+    END_IF;   
+ELSIF EncoderZustand=1 THEN    
+    IF Status.STS_LOAD THEN
+        PASteuer_b[8]:=false;
+        EncoderZustand:=2;
+    END_IF;   
+ELSIF EncoderZustand=2 THEN
+    IF NOT Status.STS_LOAD THEN
+        PASteuer_b[0]:=true;
+        EncoderZustand:=3;
+    END_IF;   
+ELSIF EncoderZustand=3 THEN
+    IF Status.STS_GATE THEN
+        Axis.EinInitLaeuft:=false;
+        EncoderZustand:=4;
+        PASteuer_b[4]:=true;
+        PASteuer_b[6]:=true;
+    END_IF;   
+END_IF;   
+ 
+LageDiff_DI:=(Geber_DI-GeberAlt_DI)*INT_TO_DINT(Richtungsanpassung);
+Axis.LageIstwert_DI:=LageDiff_DI+Axis.LageIstwert_DI;
+Axis.ActPosition:=DINT_TO_REAL(Axis.LageIstwert_DI-Axis.PositionOffset)*
+                  aufl+RefPointInt;
+Axis.InternalActPos:=Axis.ActPosition-Axis.InternalPosOffset;
+GeberAlt_DI:=Geber_DI;
+Axis.ActVelocity:=DINT_TO_REAL(LageDiff_DI)*v_Faktor;
+ 
+IF Axis.AxisType THEN
+    TruncKorr:=(Axis.ActPosition-Axis.AxisLimitMin)/Axis.AchsLaenge;
+    TruncKorr_DI:=TRUNC(TruncKorr);
+    IF TruncKorr<0.0 AND DINT_TO_REAL(TruncKorr_DI)<>TruncKorr THEN
+        TruncKorr_DI:=TruncKorr_DI-1;
+    END_IF;
+   
+    Axis.ActPosition:=Axis.ActPosition-DINT_TO_REAL(TruncKorr_DI)*Axis.AchsLaenge;
+ELSE   
+    Axis.Err.SWLimitMinExceeded:=Axis.SWLimitEnable and Axis.Sync AND
+                                 Axis.ActPosition<=Axis.AxisLimitMin;
+    Axis.Err.SWLimitMaxExceeded:=Axis.SWLimitEnable and Axis.Sync AND
+                                 Axis.ActPosition>=Axis.AxisLimitMax;
+    Err_DW_str:=Axis.Err;                            
+    Axis.Error:=Err_DW<>0;                            
+END_IF;
+   
+IF NOT (Sim OR EncErr) THEN
+    PASteuer_b[3]:=DOut_1;
+    PASteuer_b[5]:=DOut_2;
+    IF Taktsynchron THEN
+        QW[Addr_Steuer]:=PASteuer;
+    ELSE
+        PQW[Addr_Steuer]:=PASteuer;
+    END_IF;
+END_IF;
+ 
+END_FUNCTION_BLOCK

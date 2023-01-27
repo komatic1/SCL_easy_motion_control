@@ -1,0 +1,161 @@
+FUNCTION FC100 : VOID
+TITLE ='Initialize axis DB'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : MC_Init
+VERSION : '2.0'
+ 
+CONST
+    LIM:=16777216; //DW#16#1000000;
+END_CONST   
+ 
+VAR_IN_OUT
+  Axis : UDT1 ;     //Global axis data
+END_VAR
+VAR_TEMP
+  AchsLaengeStrich : REAL ;   
+  Init_DW : DWORD ;    //internal use
+  Init_DW_str AT Init_DW: STRUCT     //Init bits for 32 FBs
+     I0 : BOOL;    //Init bit 0
+     I1 : BOOL;    //Init bit 1
+     I2 : BOOL;    //Init bit 2
+     I3 : BOOL;    //Init bit 3
+     I4 : BOOL;    //Init bit 4
+     I5 : BOOL;    //Init bit 5
+     I6 : BOOL;    //Init bit 6
+     I7 : BOOL;    //Init bit 7
+     I8 : BOOL;    //Init bit 8
+     I9 : BOOL;    //Init bit 9
+     I10 : BOOL;    //Init bit 10
+     I11 : BOOL;    //Init bit 11
+     I12 : BOOL;    //Init bit 12
+     I13 : BOOL;    //Init bit 13
+     I14 : BOOL;    //Init bit 14
+     I15 : BOOL;    //Init bit 15
+     I16 : BOOL;    //Init bit 16
+     I17 : BOOL;    //Init bit 17
+     I18 : BOOL;    //Init bit 18
+     I19 : BOOL;    //Init bit 19
+     I20 : BOOL;    //Init bit 20
+     I21 : BOOL;    //Init bit 21
+     I22 : BOOL;    //Init bit 22
+     I23 : BOOL;    //Init bit 23
+     I24 : BOOL;    //Init bit 24
+     I25 : BOOL;    //Init bit 25
+     I26 : BOOL;    //Init bit 26
+     I27 : BOOL;    //Init bit 27
+     I28 : BOOL;    //Init bit 28
+     I29 : BOOL;    //Init bit 29
+     I30 : BOOL;    //Init bit 30
+     I31 : BOOL;    //Init bit 31
+    END_STRUCT ;   
+ 
+  ParaF_DW : DWORD ;    //internal use
+  ParaF_bool AT ParaF_DW : ARRAY[0..31] OF BOOL ;
+ ParaF_DW_str AT ParaF_DW : STRUCT    
+     Err_AxisLimit : BOOL ;    //1=Incorrect axis limits
+     Err_MaxVelocity : BOOL ;    //1=Incorrect max. velocity
+     Err_MaxAcceleration : BOOL ;    //1=Incorrect max. acceleration
+     Err_MaxDeceleration : BOOL ;    //1=Incorrect max. deceleration
+     Err_MonTimeTargetAppr : BOOL ;    //1=Incorrect monitoring time for target approach
+     Err_TargetRange : BOOL ;    //1=Incorrect target range
+     Err_StandstillRange : BOOL ;    //1=Incorrect standstill range
+     Err_MaxFollowingDist : BOOL ;    //1=Incorrect max. follwing distance
+     Err_EmergencyDec : BOOL ;    //1=Incorrect emergency deceleration
+     Err_StepsPerRev : BOOL ;    //1=Incorrect steps per encoder revolution
+     Err_DisplacementPerRev : BOOL ;    //1=Incorrect displacement per encoder revolution
+     Err_NumberRevs : BOOL ;    //1=Incorrect number of encoder revolutions
+     Err_PolarityEncoder : BOOL ;    //1=Incorrect encoder polarity
+     Err_PolarityDrive : BOOL ;    //1=Incorrect drive polarity
+     Err_DriveInputAtMaxVel : BOOL ;    //1=Incorrect reference value for max. velocity
+     Err_AxisLength : BOOL ;    //1=Incorrect axis length
+     Err_EncoderRange : BOOL ;    //1=Encoder range is not correct for axis length
+     Err_MaxVelRotaryAxis : BOOL ;    //1=Max. velocity and sample time are not correct for rotary axis length
+     Err_DriveInputAt100 : BOOL ;    //1=Incorrect reference value for 100% rpm
+    END_STRUCT ;
+END_VAR
+BEGIN
+Init_DW:=DW#16#FFFFFFFF;
+Axis.Init:=Init_DW_str;
+Axis.OutVelocity:=0.0;
+Axis.NomVelocity:=0.0;
+Axis.ActVelocity:=0.0;
+Axis.LastNomVelocity:=0.0;
+Axis.VLastNomVelocity:=0.0;
+Axis.RundKorrektur:=0.0;
+Axis.LastRundKorrektur:=0.0;
+Axis.LastNomPosition:=Axis.InternalNomPosition;
+Axis.VLastNomPosition:=Axis.InternalNomPosition;
+Axis.AxisState:=1;
+Axis.Err.StoppedMotion:=true;
+Axis.Error:=true;
+Axis.ManEnable:=false;
+Axis.ErrorAck:=false;
+Axis.AusQuittungLaeuft:=false;
+Axis.EinQuittungLaeuft:=false;
+Axis.EintreiberFahrbereit:=false;
+Axis.EinInitLaeuft:=false;
+Axis.AusInitLaeuft:=false;
+ParaF_DW:=DW#16#0;
+Axis.Err.ConfigErr:=false;
+ 
+ParaF_bool[0]:=Axis.AxisLimitMax<=Axis.AxisLimitMin OR
+               Axis.AxisLimitMax>1.6777216e+007 OR
+               Axis.AxisLimitMin<DINT_TO_REAL(-LIM);
+ 
+ParaF_bool[1]:=Axis.MaxVelocity<=0.0;
+ParaF_bool[2]:=Axis.MaxAcceleration<=0.0;
+ParaF_bool[3]:=Axis.MaxDeceleration<=0.0;
+ParaF_bool[4]:=Axis.MonTimeTargetAppr<=0.0;
+ParaF_bool[5]:=Axis.TargetRange<=0.0;
+ParaF_bool[6]:=Axis.StandstillRange<=0.0;
+ParaF_bool[7]:=Axis.MaxFollowingDist<=0.0;
+ 
+ParaF_bool[8]:=Axis.EmergencyDec<=0.0;
+ParaF_bool[10]:=Axis.DisplacementPerRev<=0.0;
+ParaF_bool[14]:=Axis.DriveInputAtMaxVel<=0.0 OR Axis.DriveInputAtMaxVel>Axis.DriveInputAt100;
+ParaF_bool[18]:=Axis.DriveInputAt100<=0.0;
+ParaF_bool[9]:=Axis.StepsPerRev<1;
+ParaF_bool[11]:=Axis.NumberRevs<1 AND Axis.EncoderType;
+ParaF_bool[12]:=NOT (Axis.PolarityEncoder=1 OR Axis.PolarityEncoder=-1);
+ParaF_bool[13]:=NOT (Axis.PolarityDrive=1 OR Axis.PolarityDrive=-1);
+ 
+Axis.aufl:=Axis.DisplacementPerRev / DINT_TO_REAL(Axis.StepsPerRev);
+Axis.AchsLaenge:=Axis.AxisLimitMax-Axis.AxisLimitMin;
+AchsLaengeStrich:=Axis.AchsLaenge/Axis.aufl;
+ 
+ParaF_bool[15]:=AchsLaengeStrich>2.147483648e+009;
+ 
+Axis.AchsLaenge_DI:=ROUND(AchsLaengeStrich);
+Axis.AchsLaenge:=DINT_TO_REAL(Axis.AchsLaenge_DI)*Axis.aufl;
+ 
+ParaF_bool[15]:=Axis.AchsLaenge>1.6777216e+007 OR ParaF_bool[15];
+ 
+Axis.AbsGeberLaenge_DI:=INT_TO_DINT(Axis.NumberRevs)*Axis.StepsPerRev;
+ 
+ParaF_bool[16]:=((NOT Axis.AxisType AND Axis.AbsGeberLaenge_DI<=Axis.AchsLaenge_DI)
+                OR
+                ((Axis.AbsGeberLaenge_DI MOD Axis.AchsLaenge_DI) <> 0 AND Axis.AxisType))
+                AND Axis.EncoderType;
+ParaF_bool[17]:=(Axis.MaxVelocity*Axis.Sample_T  > INT_TO_REAL(Axis.NumberRevs)
+                * Axis.DisplacementPerRev*0.5) AND
+                Axis.AxisType AND Axis.EncoderType;
+IF ParaF_DW<>DW#16#0 THEN
+    Axis.Error:=true;
+    Axis.Err.ConfigErr:=true;
+ELSE
+    IF Axis.MonTimeTargetAppr < 2.0*Axis.Sample_T THEN
+        Axis.MonTimeTargetAppr:=2.0*Axis.Sample_T;
+    END_IF;
+    IF Axis.TargetRange<Axis.aufl THEN
+        Axis.TargetRange:=Axis.aufl;
+    END_IF;
+    IF Axis.StandstillRange<Axis.aufl THEN
+        Axis.StandstillRange:=Axis.aufl;
+    END_IF;
+    IF Axis.MaxFollowingDist<Axis.aufl THEN
+        Axis.MaxFollowingDist:=Axis.aufl;
+    END_IF;
+END_IF;
+Axis.Config:=ParaF_DW_str;
+END_FUNCTION

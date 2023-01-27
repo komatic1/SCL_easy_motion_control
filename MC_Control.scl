@@ -1,0 +1,261 @@
+FUNCTION_BLOCK FB111
+ 
+TITLE = 'Position control'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : MC_Ctrl
+VERSION : '2.1'
+ 
+VAR_INPUT
+    EnableDrive : BOOL;                 //1=Drive enable request
+END_VAR
+VAR_OUTPUT
+    DriveEnabled : BOOL;                //1=Drive enable set
+END_VAR
+VAR_IN_OUT
+    Axis : UDT1;                        //Global axis data
+    Init : BOOL  := true;               //1=Initialize block
+END_VAR
+VAR
+    t : REAL;                           //internal use
+    ta : REAL;                          //internal use
+    ErrorAck_alt : BOOL;                //internal use
+    Sim_alt : BOOL;                     //internal use
+END_VAR
+VAR_TEMP
+    Err_DW : DWORD;                     //internal use
+    Err_w AT Err_DW : STRUCT
+        w0 : WORD;
+        w1 : WORD;
+    END_STRUCT;
+    Err_DW_str AT Err_DW : STRUCT
+        SWLimitMinExceeded : BOOL;      //1=SW-Endschalter Anfang ьberfahren
+        SWLimitMaxExceeded : BOOL;      //1=SW-Endschalter Ende ьberfahren
+        TargetErr : BOOL;               //1=Ziel auЯerhalb des Verfahrbereichs
+        NoSync : BOOL;                  //1=Achse nicht synchronisiert
+        DirectionErr : BOOL;            //1=Fahrt in vorgegebene Richtung unzulдssig
+        DataErr : BOOL;                 //1=Parameter eines Fahr-FBs unzulдssig
+        StartErr : BOOL;                //1=Start im aktuellen Achszustand nicht mцglich
+        DistanceErr : BOOL;             //1=max. Fahrweg ьberschritten (Fahrt ohne Ziel)
+        MasterErr : BOOL;               //1=Leitachse mit hartem Fehler oder in falschem Achsstatus
+        bit09 : BOOL;
+        bit10 : BOOL;
+        bit11 : BOOL;
+        bit12 : BOOL;
+        bit13 : BOOL;
+        bit14 : BOOL;
+        bit15 : BOOL;
+        StoppedMotion : BOOL;           //1=Achse im quittierpflichtigen Stop-Zustand
+        EnableDriveErr : BOOL;          //1=Antriebsfreigabe fehlt
+        FollowingDistErr : BOOL;        //1=Max. Schleppabstand ьberschritten
+        StandstillErr : BOOL;           //1=Stillstandsbereich verlassen
+        TargetApproachErr : BOOL;       //1=Fehler beim Zieleinlauf
+        EncoderErr : BOOL;              //1=Geberfehler
+        OutputErr : BOOL;               //1=Fehler am Ausgangstreiber
+        ConfigErr : BOOL;               //1=Achsdaten fehlerhaft parametriert
+        DriveErr : BOOL;                //1=Antriebsfehler
+        bit25 : BOOL;
+        bit26 : BOOL;
+        bit27 : BOOL;
+        bit28 : BOOL;
+        bit29 : BOOL;
+        bit30 : BOOL;
+        bit31 : BOOL;
+    END_STRUCT ;
+    Init_DW : DWORD;                    //internal use
+    Init_DW_str AT Init_DW : STRUCT     //Initialisierungsbits fьr 32 Bausteine
+        I0 : BOOL;                      //Init bit 0
+        I1 : BOOL;                      //Init bit 1
+        I2 : BOOL;                      //Init bit 2
+        I3 : BOOL;                      //Init bit 3
+        I4 : BOOL;                      //Init bit 4
+        I5 : BOOL;                      //Init bit 5
+        I6 : BOOL;                      //Init bit 6
+        I7 : BOOL;                      //Init bit 7
+        I8 : BOOL;                      //Init bit 8
+        I9 : BOOL;                      //Init bit 9
+        I10 : BOOL;                     //Init bit 10
+        I11 : BOOL;                     //Init bit 11
+        I12 : BOOL;                     //Init bit 12
+        I13 : BOOL;                     //Init bit 13
+        I14 : BOOL;                     //Init bit 14
+        I15 : BOOL;                     //Init bit 15
+        I16 : BOOL;                     //Init bit 16
+        I17 : BOOL;                     //Init bit 17
+        I18 : BOOL;                     //Init bit 18
+        I19 : BOOL;                     //Init bit 19
+        I20 : BOOL;                     //Init bit 20
+        I21 : BOOL;                     //Init bit 21
+        I22 : BOOL;                     //Init bit 22
+        I23 : BOOL;                     //Init bit 23
+        I24 : BOOL;                     //Init bit 24
+        I25 : BOOL;                     //Init bit 25
+        I26 : BOOL;                     //Init bit 26
+        I27 : BOOL;                     //Init bit 27
+        I28 : BOOL;                     //Init bit 28
+        I29 : BOOL;                     //Init bit 29
+        I30 : BOOL;                     //Init bit 30
+        I31 : BOOL;                     //Init bit 31
+    END_STRUCT ;
+END_VAR
+//========================================================
+BEGIN
+ 
+IF Init THEN
+    Init := false;
+    ErrorAck_alt := false;
+    Sim_alt := Axis.Sim;
+    t := 0.0;
+    Axis.OutVelocity := 0.0;
+    Axis.FollowingDistance := 0.0;
+    ta := Axis.Sample_T;
+END_IF;
+ 
+IF Axis.Error THEN
+    Err_DW_str := Axis.Err;
+    Err_DW_str.ConfigErr := false;
+    Err_DW_str.SWLimitMinExceeded := false;
+    Err_DW_str.SWLimitMaxExceeded := false;
+    IF (Err_DW <> DW#16#0) THEN
+        IF (NOT ErrorAck_alt AND Axis.ErrorAck) THEN
+            ErrorAck_alt := true;
+        ELSIF ((Axis.ErrorAck AND ErrorAck_alt) AND
+            NOT Axis.EinInitLaeuft AND NOT Axis.AusInitLaeuft AND
+            NOT Axis.EinQuittungLaeuft AND NOT Axis.AusQuittungLaeuft AND
+            (Axis.AxisState <= 2)) THEN
+            IF (Err_w.w1 <> W#16#0) THEN
+                Axis.InternalNomPosition := Axis.InternalActPos;
+                Axis.LastNomPosition := Axis.InternalActPos;
+            END_IF;
+            Err_DW := DW#16#0;
+            Err_DW_str.ConfigErr := Axis.Err.ConfigErr;
+            Err_DW_str.SWLimitMinExceeded := Axis.Err.SWLimitMinExceeded;
+            Err_DW_str.SWLimitMaxExceeded := Axis.Err.SWLimitMaxExceeded;
+            Axis.Err := Err_DW_str;
+            Axis.Error := (Err_DW <> DW#16#0);
+            Axis.ErrorAck := false;
+            ErrorAck_alt := false;
+            Axis.AxisState := 2;
+        END_IF;
+    ELSE
+        Axis.ErrorAck := false;
+        ErrorAck_alt := false;
+    END_IF;
+ELSE
+    Axis.ErrorAck := false;
+    ErrorAck_alt := false;
+END_IF;
+ 
+IF NOT EnableDrive THEN
+    Axis.Err.EnableDriveErr := true;
+    Axis.Error := true;
+END_IF;
+ 
+IF (Axis.Sim XOR Sim_alt) THEN
+    Axis.AxisState := 1;
+    Axis.Error := true;
+    Axis.Err.StoppedMotion := true;
+    Sim_alt := Axis.Sim;
+    Init_DW := DW#16#FFFFFFFF;
+    Axis.Init := Init_DW_str;
+END_IF;
+ 
+IF Axis.Error THEN
+    Err_DW_str := Axis.Err;
+    IF (Err_w.w1 <> W#16#0) THEN
+        IF (Axis.AxisState <= 2) THEN
+            Axis.AxisState := 1;
+        ELSE
+            IF (Axis.AxisState <> 7) THEN
+                Axis.AxisState := 7;
+                Axis.Coord := Axis.Coord + 1;
+                IF (ABS(Axis.OutVelocity) >= ABS(Axis.NomVelocity)) THEN
+                    Axis.OutVelocity := Axis.NomVelocity;
+                END_IF;
+            END_IF;
+        END_IF;
+    END_IF;
+END_IF;
+ 
+IF NOT Axis.ManEnable THEN
+    IF (Axis.AxisState <> 1 AND Axis.AxisState <> 7) THEN
+        Axis.FollowingDistance := Axis.InternalNomPosition - Axis.InternalActPos;
+        IF (ABS(Axis.FollowingDistance) > Axis.MaxFollowingDist) THEN
+            Axis.Err.FollowingDistErr := true;
+            Axis.Error := true;
+        END_IF;
+        Axis.OutVelocity := ABS(Axis.FactorP) * Axis.FollowingDistance;
+        IF (Axis.AxisState = 2) THEN
+            IF (ABS(Axis.FollowingDistance) > Axis.StandstillRange) THEN
+                Axis.Err.StandstillErr := true;
+                Axis.Error := true;
+            END_IF;
+        ELSIF (Axis.AxisState = 5 OR Axis.AxisState = 8) THEN
+            IF Axis.MonitorTargetAppr THEN
+                IF (ABS(Axis.FollowingDistance) > Axis.TargetRange) THEN
+                    IF (t > Axis.MonTimeTargetAppr) THEN
+                        Axis.Err.TargetApproachErr := true;
+                        Axis.Error := true;
+                        t := 0.0;
+                    ELSE
+                        t := t + ta;
+                    END_IF;
+                ELSE
+                    t := 0.0;
+                    Axis.AxisState := 2;
+                END_IF;
+            ELSE
+                t := 0.0;
+                Axis.AxisState := 2;
+            END_IF;
+        END_IF;
+    ELSIF (Axis.AxisState = 7) THEN
+        Axis.RemainingDistance := 0.0;
+        Axis.FollowingDistance := 0.0;
+        IF (Axis.OutVelocity > 0.0) THEN
+            Axis.OutVelocity := (Axis.OutVelocity - (Axis.EmergencyDec * ta));
+            IF (Axis.OutVelocity <= 0.0) THEN
+                Axis.OutVelocity := 0.0;
+                Axis.AxisState := 1;
+            END_IF;
+        ELSE
+            Axis.OutVelocity := ((Axis.EmergencyDec * ta) + Axis.OutVelocity);
+            IF (Axis.OutVelocity >= 0.0) THEN
+                Axis.OutVelocity := 0.0;
+                Axis.AxisState := 1;
+            END_IF;
+        END_IF;
+    ELSIF (Axis.AxisState = 1) THEN
+        Axis.InternalNomPosition := Axis.InternalActPos;
+        Axis.LastNomPosition := Axis.InternalActPos;
+        Axis.NomVelocity := 0.0;
+        Axis.OutVelocity := 0.0;
+        Axis.RemainingDistance := 0.0;
+        Axis.FollowingDistance := 0.0;
+        Axis.Error := true;
+        Axis.Err.StoppedMotion := true;
+    END_IF;
+    DriveEnabled := ((Axis.AxisState <> 1) AND EnableDrive);
+ELSE
+    Axis.OutVelocity := Axis.ManVelocity;
+    IF (ABS(Axis.ManVelocity) > Axis.MaxVelocity) THEN
+        Axis.OutVelocity := ((Axis.ManVelocity / ABS(Axis.ManVelocity)) * Axis.MaxVelocity);
+    END_IF;
+    Axis.InternalNomPosition := Axis.InternalActPos;
+    Axis.LastNomPosition := Axis.InternalActPos;
+    Axis.NomVelocity := 0.0;
+    Axis.LastNomVelocity := 0.0;
+    Axis.RemainingDistance := 0.0;
+    Axis.FollowingDistance := 0.0;
+    DriveEnabled := EnableDrive;
+END_IF;
+ 
+Axis.VLastNomPosition := Axis.LastNomPosition;
+Axis.LastNomPosition := Axis.InternalNomPosition;
+Axis.VLastNomVelocity := Axis.LastNomVelocity;
+Axis.LastNomVelocity := Axis.NomVelocity;
+Axis.LastInternalPosOffset := Axis.InternalPosOffset;
+Axis.LastRundKorrektur := Axis.RundKorrektur;
+Axis.RundKorrektur := 0.0;
+ 
+END_FUNCTION_BLOCK

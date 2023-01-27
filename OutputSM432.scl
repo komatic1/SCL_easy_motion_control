@@ -1,0 +1,57 @@
+FUNCTION_BLOCK FB32 //OutputSM432
+TITLE ='Output driver for SM432'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : OutSM432
+VERSION : '2.0'
+ 
+VAR_INPUT
+  EnableDrive : BOOL ;    //1=Enable analog output
+  OutErr : BOOL ;    //1=Output module error
+END_VAR
+VAR_IN_OUT
+  Axis : UDT1;
+  Init : BOOL  := TRUE;    //1=Initialize block
+END_VAR
+VAR
+  Faktor : REAL ;    //internal use
+  Addr_NomVelocity_I : INT ;    //internal use
+END_VAR
+VAR_TEMP
+  OutputValue_R : REAL ;    //internal use
+  OutputValue_B AT OutputValue_R : ARRAY[0..31] OF BOOL;
+  OutputValue : INT ;    //internal use
+  vz : BOOL ;    //internal use
+END_VAR
+BEGIN
+IF Init
+THEN
+    Init:=false;
+    Faktor:=INT_TO_REAL(Axis.PolarityDrive)*Axis.DriveInputAtMaxVel/Axis.MaxVelocity;
+    Addr_NomVelocity_I:=Axis.OutputChannelNo*2+Axis.OutputModuleOutAddr;
+END_IF;     
+ 
+IF OutErr 
+THEN
+    Axis.Error:=true;
+    Axis.Err.OutputErr:=true;
+END_IF;
+OutputValue_R:=(Axis.OutVelocity*Faktor+Axis.OffsetCompensation)*2.764800e+003;
+IF ABS(OutputValue_R)>2.764800e+004
+THEN
+      vz:=OutputValue_B[7]; // save sign of real number : cool trick
+      OutputValue_R:=2.764800e+004;
+      OutputValue_B[7]:=vz; // restore sign
+END_IF;   
+OutputValue:=REAL_TO_INT(OutputValue_R);
+IF NOT EnableDrive 
+THEN
+    OutputValue:=0;
+END_IF;
+  
+IF NOT (Axis.Sim OR OutErr)
+THEN
+    PQW[Addr_NomVelocity_I]:=INT_TO_WORD(OutputValue);
+END_IF;    
+ 
+END_FUNCTION_BLOCK

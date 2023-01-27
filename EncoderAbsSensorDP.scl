@@ -1,0 +1,237 @@
+FUNCTION_BLOCK FB24
+TITLE ='Input driver for DP-sensor'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : EncAbsDP
+VERSION : '2.0'
+ 
+ 
+VAR_INPUT
+  EncErr : BOOL ;    //1=Encoder error
+END_VAR
+VAR_IN_OUT
+  Axis :  UDT1   ;
+  Init : BOOL  := TRUE;    //1=Initialize block
+END_VAR
+VAR
+  Status : STRUCT    
+   bit24 : BOOL ;   
+   Ready : BOOL ;    //1=Module ready
+   Mode : BOOL ;    //Operating mode: 0=commissioning, 1=normal mode
+   SWLimitExceeded : BOOL ;    //1=SW limit switch min. or max. exceeded
+   Dir : BOOL ;    //Rotational direction: 0=clockwise, 1=counterclockwise
+   bit29 : BOOL ;   
+   bit30 : BOOL ;   
+   bit31 : BOOL ;   
+   Istwert1623 : BYTE ;    //internal use                 
+   Istwert0815 : BYTE ;    //internal use                 
+   Istwert0007 : BYTE ;    //internal use                 
+END_STRUCT ;
+  Status_dw AT Status : DWORD;
+  GeberAlt_DI : DINT ;    //internal use
+  Addr_ActPos_DI : INT ;    //internal use
+  v_Faktor : REAL ;    //internal use
+  MaxZahl : DINT ;    //internal use
+  MaxZahlHalb : DINT ;    //internal use
+  Richtungsanpassung : INT  := 1;    //internal use
+  aufl : REAL ;    //internal use
+  AxisLimitMin : REAL ;    //internal use
+  AxisLimitMax : REAL ;    //internal use
+  PositionOffset : DINT ;    //internal use
+  PositionOffset_r AT PositionOffset : REAL;
+  EncErr_alt : BOOL ;    //internal use
+END_VAR
+VAR_TEMP
+  Geber_DI : DINT ;    //internal use
+  LageDiff_DI : DINT ;    //internal use
+  Addr_InChannel : INT ;    //internal use
+  TruncKorr : REAL ;    //internal use
+  TruncKorr_DI : DINT ;    //internal use
+  Err_DW : DWORD ;    //internal use
+  Err_DW_str AT Err_DW : STRUCT
+     SWLimitMinExceeded : BOOL ;    //1=Min. SW limit switch exceeded
+     SWLimitMaxExceeded : BOOL ;    //1=Max. SW limit switch exceeded
+     TargetErr : BOOL ;    //1=Target beyond travel range
+     NoSync : BOOL ;    //1=Axis not synchronized
+     DirectionErr : BOOL ;    //1=Motion not allowed in direction entered
+     DataErr : BOOL ;    //1=Invalid motion FB parameter
+     StartErr : BOOL ;    //1=Start not possible in current axis state
+     DistanceErr : BOOL ;    //1=Motion is too far
+     MasterErr : BOOL ;    //1=Master axis error with hard stop or wrong axis status
+     bit09 : BOOL ;   
+     bit10 : BOOL ;   
+     bit11 : BOOL ;   
+     bit12 : BOOL ;   
+     bit13 : BOOL ;   
+     bit14 : BOOL ;   
+     bit15 : BOOL ;   
+     StoppedMotion : BOOL ;    //1=Axis is in stop and must be acknowledged
+     EnableDriveErr : BOOL ;    //1=Drive enable missing
+     FollowingDistErr : BOOL ;    //1=Max. following distance exceeded
+     StandstillErr : BOOL ;    //1=Outside standstill range
+     TargetApproachErr : BOOL ;    //1=Target approach error
+     EncoderErr : BOOL ;    //1=Encoder error
+     OutputErr : BOOL ;    //1=Output driver error
+     ConfigErr : BOOL ;    //1=Axis data incorrectly configured
+     DriveErr : BOOL ;    //1=Drive error
+     bit25 : BOOL ;   
+     bit26 : BOOL ;   
+     bit27 : BOOL ;   
+     bit28 : BOOL ;   
+     bit29 : BOOL ;   
+     bit30 : BOOL ;   
+     bit31 : BOOL ;   
+  END_STRUCT ; 
+  GeberAmAchsende : DINT ;    //internal use
+  GeberAmAchsanfang : DINT ;    //internal use
+  Hilf_DI : DINT ;    //internal use
+END_VAR
+BEGIN
+IF NOT Init AND NOT EncErr AND EncErr_alt
+THEN
+    Init:=true;
+    Axis.Err.EncoderErr:=true;
+    Axis.Error:=true;
+END_IF;
+ 
+IF Init  
+THEN
+    Addr_InChannel:=Axis.InputModuleInAddr;
+    Addr_ActPos_DI:=Addr_InChannel;
+    Status_dw:=DW#16#0;
+    Axis.EintreiberFahrbereit:=false;
+    EncErr_alt:=false;
+    Axis.DoneRef:=false;
+    Axis.ExecRef:=0;
+    aufl:=Axis.aufl;
+    v_Faktor:=aufl/Axis.Sample_T;
+    Richtungsanpassung:=Axis.PolarityEncoder;
+    AxisLimitMin:=Axis.AxisLimitMin;
+    AxisLimitMax:=Axis.AxisLimitMax;
+    Axis.EncoderType:=true;
+    MaxZahl:=Axis.AbsGeberLaenge_DI;
+    MaxZahlHalb:=MaxZahl/2;
+END_IF;   
+ 
+IF Axis.Sim OR EncErr
+THEN
+    Status_dw:=DW#16#2000000;
+ELSE
+    Status_dw:=PID[Addr_ActPos_DI];
+    Axis.EncoderValue:=DWORD_TO_DINT(Status_dw AND DW#16#FFFFFF);
+END_IF;
+ 
+Geber_DI:=Axis.EncoderValue;
+ 
+IF EncErr
+THEN
+    Axis.Err.EncoderErr:=true;
+    Axis.Error:=true;
+    EncErr_alt:=true;
+ELSE
+    IF Init
+    THEN
+        PositionOffset:=Axis.PositionOffset;
+        GeberAmAchsanfang:=ROUND((AxisLimitMin-Axis.RefPoint)/aufl*INT_TO_REAL(Richtungsanpassung)+
+                           DINT_TO_REAL(PositionOffset)+DINT_TO_REAL(MaxZahl)) MOD MaxZahl;
+        GeberAmAchsende:=ROUND((AxisLimitMax-Axis.RefPoint)/aufl*INT_TO_REAL(Richtungsanpassung)+
+                           DINT_TO_REAL(PositionOffset)+DINT_TO_REAL(MaxZahl)) MOD MaxZahl;
+    
+        IF Richtungsanpassung=-1
+        THEN
+            Hilf_DI:=GeberAmAchsanfang;
+            GeberAmAchsanfang:=GeberAmAchsende;
+            GeberAmAchsende:=Hilf_DI;
+        END_IF;
+        Hilf_DI:=0;
+        IF GeberAmAchsanfang>GeberAmAchsende
+        THEN
+            IF PositionOffset>=GeberAmAchsanfang
+            THEN
+                IF Geber_DI<=GeberAmAchsende
+                THEN
+                    Hilf_DI:=MaxZahl;
+                END_IF;
+            END_IF;
+           
+            IF PositionOffset<=GeberAmAchsende
+            THEN
+                IF Geber_DI>=GeberAmAchsanfang
+                THEN
+                    Hilf_DI:=-MaxZahl;
+                END_IF;
+            END_IF;
+        END_IF;
+        Axis.LageIstwert_DI:=(Geber_DI+Hilf_DI-PositionOffset)*
+                             INT_TO_DINT(Richtungsanpassung)+PositionOffset;
+                            
+        GeberAlt_DI:=Geber_DI;
+    END_IF;     
+   
+    IF NOT Status.Ready
+    THEN
+        Axis.Err.EncoderErr:=true;
+        Axis.Error:=true;
+    ELSE 
+        IF Axis.ExecRef=1
+        THEN
+            Axis.InternalNomPosition:=0.0;
+            Axis.LastNomPosition:=0.0;
+            Axis.LageIstwert_DI:=Geber_DI;
+            Axis.PositionOffset:=Geber_DI;
+            Axis.InternalPosOffset:=Axis.RefPoint; 
+            Axis.DoneRef:=true;
+        ELSE          
+            Axis.DoneRef:=false;
+        END_IF;
+       
+        LageDiff_DI:=(Geber_DI-GeberAlt_DI)*INT_TO_DINT(Richtungsanpassung);
+       
+        IF LageDiff_DI<-MaxZahlHalb
+        THEN
+            LageDiff_DI:=LageDiff_DI+MaxZahl;
+        END_IF;
+       
+        IF LageDiff_DI>MaxZahlHalb
+        THEN
+            LageDiff_DI:=LageDiff_DI-MaxZahl;
+        END_IF;
+       
+        Axis.LageIstwert_DI:=Axis.LageIstwert_DI+LageDiff_DI;
+        Axis.ActPosition:=DINT_TO_REAL(Axis.LageIstwert_DI-Axis.PositionOffset)*
+                           aufl+Axis.RefPoint;
+        Axis.InternalActPos:=Axis.ActPosition-Axis.InternalPosOffset;                  
+        GeberAlt_DI:=Geber_DI;
+        Axis.ActVelocity:=DINT_TO_REAL(LageDiff_DI)*v_Faktor;
+        IF Axis.AxisType
+        THEN
+            TruncKorr:=(Axis.ActPosition-AxisLimitMin)/Axis.AchsLaenge;
+            TruncKorr_DI:=TRUNC(TruncKorr);
+            IF TruncKorr<0.0 AND DINT_TO_REAL(TruncKorr_DI)<>TruncKorr
+            THEN
+                TruncKorr_DI:=TruncKorr_DI-1;
+            END_IF;
+            Axis.ActPosition:=Axis.ActPosition-(TruncKorr_DI*Axis.AchsLaenge);
+        ELSE
+            Axis.Err.SWLimitMinExceeded:=Axis.SWLimitEnable AND
+                                         Axis.Sync AND
+                                         Axis.ActPosition<=AxisLimitMin;
+            Axis.Err.SWLimitMaxExceeded:=Axis.SWLimitEnable AND
+                                         Axis.Sync AND
+                                         Axis.ActPosition>=AxisLimitMax;
+                                    
+            Err_DW_str:=Axis.Err;
+            Axis.Error:=Err_DW<>DW#16#0;
+        END_IF;
+    END_IF;      
+END_IF;
+ 
+IF Init 
+THEN
+    Init:=false;
+    Axis.InternalNomPosition:=Axis.InternalActPos;  
+    Axis.LastNomPosition:=Axis.InternalActPos;
+    Axis.VLastNomPosition:=Axis.InternalActPos;
+END_IF;
+   
+END_FUNCTION_BLOCK

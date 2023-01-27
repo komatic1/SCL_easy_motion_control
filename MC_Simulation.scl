@@ -1,0 +1,59 @@
+FUNCTION_BLOCK FB112
+TITLE ='Simulate axis'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : MC_Sim
+VERSION : '2.0'
+ 
+ 
+VAR_IN_OUT
+  Axis : UDT1 ;    //Global axis data
+  Init : BOOL  := TRUE;    //1=Initialize block
+END_VAR
+VAR
+  Raster : BOOL ;    //internal use
+  Bitanzahl : INT  := 12;    //internal use
+  LageDiff_R : REAL ;    //internal use
+  Faktor : REAL ;    //internal use
+  AusFaktor : REAL ;    //internal use
+  WertBei10V : REAL ;    //internal use
+END_VAR
+VAR_TEMP
+  Geber_DI_alt : DINT ;    //internal use
+  v : REAL ;    //internal use
+  v_B AT v : ARRAY[0..31] OF BOOL;
+  vz : BOOL ;    //internal use
+END_VAR
+BEGIN
+ 
+IF Init THEN
+    Init:=false;
+    Axis.OutVelocity:=0.0;
+    LageDiff_R:=0.0;
+    WertBei10V:=EXP(INT_TO_REAL(Bitanzahl)*6.931472e-001);
+    Faktor:=Axis.DriveInputAtMaxVel/Axis.MaxVelocity*WertBei10V/Axis.DriveInputAt100;
+    AusFaktor:=Faktor*INT_TO_REAL(Axis.PolarityEncoder);
+END_IF;
+ 
+IF Axis.Sim THEN
+    v:=Axis.OutVelocity*AusFaktor;
+    IF ABS(v)>WertBei10V THEN
+        vz:=v_B[7];
+        v:=WertBei10V;
+        v_B[7]:=vz;
+    END_IF;
+   
+    IF Raster THEN
+        v:=DINT_TO_REAL(ROUND(v))/Faktor;
+    ELSE
+        v:=v/Faktor;
+    END_IF;
+    LageDiff_R:=v*Axis.Sample_T+LageDiff_R;
+    Geber_DI_alt:=Axis.EncoderValue;
+    Axis.EncoderValue:=ROUND(LageDiff_R/Axis.aufl)+Axis.EncoderValue;
+    LageDiff_R:=LageDiff_R-DINT_TO_REAL(Axis.EncoderValue-Geber_DI_alt)*Axis.aufl;
+    IF Axis.EncoderType THEN
+        Axis.EncoderValue:=Axis.EncoderValue MOD Axis.AbsGeberLaenge_DI;
+    END_IF;
+END_IF;
+END_FUNCTION_BLOCK

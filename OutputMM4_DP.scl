@@ -1,0 +1,183 @@
+FUNCTION_BLOCK FB37  //  OutputMM4_DP
+TITLE ='Output driver for Micromaster 4 DP'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : OutMM4DP
+VERSION : '2.0'
+ 
+ 
+VAR_INPUT
+  EnableDrive : BOOL ;    //1=Enable output
+  OutErr : BOOL ;    //1=Output module error
+END_VAR
+VAR_IN_OUT
+  Axis : UDT1  ;   //Global axis data
+  Init : BOOL  := TRUE;    //1=Initialize block
+END_VAR
+VAR
+  STW1 : WORD ;    //internal use
+  STW1_bool AT STW1 : ARRAY[0..15] OF BOOL;
+ 
+  ZSW1 : WORD ;    //internal use
+  ZSW1_bool AT ZSW1 : ARRAY[0..15] OF BOOL;
+ 
+  HIW : WORD ;    //internal use
+  PAddrA_STW1 : INT ;    //internal use
+  PAddrA_HSW : INT ;    //internal use
+  PAddrE_ZSW1 : INT ;    //internal use
+  PAddrE_HIW : INT ;    //internal use
+  Faktor : REAL ;    //internal use
+  MM_State : INT ;    //internal use
+  OutErr_alt : BOOL ;    //internal use
+END_VAR
+VAR_TEMP
+  OutputValue_R : REAL ;    //internal use
+  OutputValue_B AT OutputValue_R : ARRAY[0..31] OF BOOL;
+  HSW : WORD ;    //internal use
+  Sim : BOOL ;    //internal use
+  P_Zugriff : BOOL ;    //internal use
+  vz : BOOL ;    //internal use
+END_VAR
+BEGIN
+ 
+IF NOT Init AND NOT OutErr AND OutErr_alt
+THEN
+    Init:=true;
+    Axis.Err.OutputErr:=true;
+    Axis.Error:=true;
+END_IF;
+   
+IF Init
+THEN
+    Init:=false;
+    PAddrA_STW1:=Axis.OutputModuleOutAddr;
+    PAddrA_HSW:=Axis.OutputModuleOutAddr+2;
+    PAddrE_ZSW1:=Axis.OutputModuleInAddr;
+    PAddrE_HIW:=Axis.OutputModuleInAddr+2;
+    Faktor:=(Axis.DriveInputAtMaxVel*1.638400e+004*INT_TO_REAL(Axis.PolarityDrive))/ 
+            (Axis.DriveInputAt100*Axis.MaxVelocity);
+    STW1:=W#16#476;
+    MM_State:=0;
+    Axis.AusInitLaeuft:=true;
+    OutErr_alt:=false;
+END_IF;    Sim:=Axis.Sim;
+P_Zugriff:= NOT (Sim OR OutErr);   
+IF P_Zugriff
+THEN
+    ZSW1:=PIW[PAddrE_ZSW1];
+    HIW:=PIW[PAddrE_HIW];
+END_IF;
+ 
+IF Sim
+THEN
+    ZSW1:=W#16#BA37;
+END_IF;
+ 
+IF MM_State=4
+THEN
+    IF (ZSW1 AND W#16#BA7C)=W#16#BA34
+    THEN
+        OutputValue_R:=Axis.OutVelocity*Faktor;
+        IF ABS(OutputValue_R)>1.638400e+004
+        THEN
+            vz:=OutputValue_B[7]; // save sign of real number : cool trick
+            OutputValue_R:=1.638400e+004;
+            OutputValue_B[7]:=vz; // restore sign
+        END_IF; 
+        HSW:= INT_TO_WORD(REAL_TO_INT(OutputValue_R));
+    ELSE
+        Axis.Error:=true;
+        Axis.Err.DriveErr:=true;
+        STW1_bool[8]:=false;
+        MM_State:=5;
+    END_IF;     
+ELSIF MM_State=0
+THEN
+    IF ZSW1_bool[11]
+    THEN
+        STW1_bool[15]:=false;
+        MM_State:=10;
+    ELSE
+        MM_State:=1;
+    END_IF;
+ELSIF MM_State=10
+THEN
+    STW1_bool[15]:=true; 
+    MM_State:=11;
+ELSIF (MM_State=11) AND NOT ZSW1_bool[11]
+THEN
+    STW1_bool[15]:=false;
+    STW1_bool[8]:=false;
+    MM_State:=1;
+ELSIF MM_State=1
+THEN
+    IF ZSW1_bool[8]
+    THEN
+        STW1_bool[8]:=true;
+        MM_State:=2;
+    END_IF;
+ELSIF MM_State=2
+THEN
+    IF ZSW1_bool[9]
+    THEN
+        STW1_bool[11]:=true;
+        MM_State:=3;
+    END_IF;
+ELSIF MM_State=3
+THEN
+    IF ZSW1_bool[10]
+    THEN
+        MM_State:=4;
+        Axis.AusInitLaeuft:=false;
+    END_IF;
+ELSIF MM_State=5
+THEN
+    IF Axis.ErrorAck
+    THEN
+        Axis.AusQuittungLaeuft:=true;
+        IF ZSW1<>W#16#0 AND NOT OutErr
+        THEN
+            IF ZSW1_bool[11]
+            THEN
+                STW1_bool[15]:=true;
+                MM_State:=7;
+            ELSE
+                STW1_bool[8]:=true;
+                MM_State:=6;
+            END_IF;
+        END_IF;
+    END_IF;
+ELSIF MM_State=7
+THEN
+    STW1_bool[15]:=false;
+    Axis.AusQuittungLaeuft:=false;
+    MM_State:=8;
+ELSIF MM_State=8
+THEN
+    IF ZSW1_bool[8]
+    THEN
+        STW1_bool[8]:=true;
+        MM_State:=3;
+    END_IF;
+ELSIF MM_State=6
+THEN
+    Axis.AusQuittungLaeuft:=false;
+    MM_State:=4;
+END_IF; 
+ 
+IF OutErr
+THEN
+    Axis.Error:=true;
+    Axis.Err.OutputErr:=true;  
+    OutErr_alt:=true; 
+END_IF;
+ 
+IF NOT EnableDrive THEN HSW:=W#16#0; END_IF;    
+ 
+IF P_Zugriff
+THEN
+    PQW[PAddrA_STW1]:=STW1;
+    PQW[PAddrA_HSW]:=HSW;
+END_IF;
+ 
+END_FUNCTION_BLOCK

@@ -1,0 +1,402 @@
+FUNCTION_BLOCK FB102
+TITLE ='Move a relative distance'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : MC_Rel
+VERSION : '2.0'
+ 
+ 
+VAR_INPUT
+  Execute : BOOL ;    //Start the motion at rising edge
+  Distance : REAL ;    //Relative distance for the motion [u]
+  Velocity : REAL  := 1.000000e-001;    //Maximum velocity [u/s]
+  Acceleration : REAL  := 1.000000e-001;    //Acceleration [u/sІ]
+  Deceleration : REAL  := 1.000000e-001;    //Deceleration [u/sІ]
+END_VAR
+VAR_OUTPUT
+  Busy : BOOL ;    //1=Moving
+  Done : BOOL ;    //1=Distance reached
+  CommandAborted : BOOL ;    //1=Command was aborted by another command
+  Error : BOOL ;    //1=Error has occurred within FB
+END_VAR
+VAR_IN_OUT
+  Axis : UDT1 ;     //Global axis data
+  Init : BOOL  := TRUE;    //1=Initialize block
+END_VAR
+VAR
+  ziel : REAL ;    //internal use
+  v_max : REAL ;    //internal use
+  v_max_B AT v_max : ARRAY[0..31] OF BOOL;
+  a_1 : REAL ;    //internal use
+  a_1_B AT a_1 : ARRAY[0..31] OF BOOL;
+  b : REAL ;    //internal use
+  b_B AT b : ARRAY[0..31] OF BOOL;
+  ta : REAL ;    //internal use
+  taHalbe : REAL ;    //internal use
+  b0 : REAL ;    //internal use
+  bk1 : REAL ;    //internal use
+  Zustand : INT ;    //internal use
+  Bereich : INT ;    //internal use
+  Coord : DINT ;    //internal use
+  aufl : REAL ;    //internal use
+  Error_alt : BOOL ;    //internal use
+END_VAR
+VAR_TEMP
+  over : REAL ;    //internal use
+  vk : REAL ;    //internal use
+  vk_B AT vk : ARRAY[0..31] OF BOOL ;
+ 
+  sk : REAL ;    //internal use
+  vk1 : REAL ;    //internal use
+  sk1 : REAL ;    //internal use
+  Bremsweg : REAL ;    //internal use
+  Restweg : REAL ;    //internal use
+  RB : REAL ;    //internal use
+  vv : REAL ;    //internal use
+  delta_s : REAL ;    //internal use
+  v_over : REAL ;    //internal use
+  Hilf_R : REAL ;    //internal use
+  Hilf_DI : DINT ;    //internal use
+  ZielStrich : REAL ;    //internal use
+  ziel_AWK : REAL ;    //internal use
+  Err_DW : DWORD ;    //internal use
+  Err_w AT Err_DW : STRUCT
+   w0 : WORD;
+   w1 : WORD;
+  END_STRUCT ;  
+  Err_DW_str AT Err_DW : STRUCT
+     SWLimitMinExceeded : BOOL ;    //1=Min. SW limit switch exceeded
+     SWLimitMaxExceeded : BOOL ;    //1=Max. SW limit switch exceeded
+     TargetErr : BOOL ;    //1=Target beyond travel range
+     NoSync : BOOL ;    //1=Axis not synchronized
+     DirectionErr : BOOL ;    //1=Motion not allowed in direction entered
+     DataErr : BOOL ;    //1=Invalid motion FB parameter
+     StartErr : BOOL ;    //1=Start not possible in current axis state
+     DistanceErr : BOOL ;    //1=Motion is too far
+     MasterErr : BOOL ;    //1=Master axis error with hard stop or wrong axis status
+     bit09 : BOOL ;   
+     bit10 : BOOL ;   
+     bit11 : BOOL ;   
+     bit12 : BOOL ;   
+     bit13 : BOOL ;   
+     bit14 : BOOL ;   
+     bit15 : BOOL ;   
+     StoppedMotion : BOOL ;    //1=Axis is in stop and must be acknowledged
+     EnableDriveErr : BOOL ;    //1=Drive enable missing
+     FollowingDistErr : BOOL ;    //1=Max. following distance exceeded
+     StandstillErr : BOOL ;    //1=Outside standstill range
+     TargetApproachErr : BOOL ;    //1=Target approach error
+     EncoderErr : BOOL ;    //1=Encoder error
+     OutputErr : BOOL ;    //1=Output driver error
+     ConfigErr : BOOL ;    //1=Axis data incorrectly configured
+     DriveErr : BOOL ;    //1=Drive error
+     bit25 : BOOL ;   
+     bit26 : BOOL ;   
+     bit27 : BOOL ;   
+     bit28 : BOOL ;   
+     bit29 : BOOL ;   
+     bit30 : BOOL ;   
+     bit31 : BOOL ;   
+  END_STRUCT ; 
+ 
+END_VAR
+BEGIN
+ 
+IF Init
+THEN
+    Init:=false;
+    Done:=false;
+    Busy:=false;
+    CommandAborted:=false;
+    Error:=false;
+    Error_alt:=false;
+    Zustand:=1;
+    Bereich:=5;
+    ta:=Axis.Sample_T;
+    taHalbe:=ta*5.000000e-001;
+    aufl:=Axis.aufl;
+END_IF;     
+   
+IF Zustand=1
+THEN
+    IF NOT  Busy AND Execute
+    THEN
+        Busy:=true;
+        Done:=false;
+        CommandAborted:=false;
+        Error:=false;
+        Error_alt:=false;
+        Coord:=Axis.Coord+1;
+        a_1:=Axis.MaxAcceleration;
+        b:=Axis.MaxDeceleration;
+        v_max:=Axis.MaxVelocity;
+        IF v_max>Velocity THEN v_max:=Velocity; END_IF;
+        IF a_1>Acceleration THEN a_1:=Acceleration; END_IF;
+        IF b>Deceleration THEN b:=Deceleration; END_IF;
+        ziel:=Axis.LastNomPosition+Axis.InternalPosOffset+Distance;
+        ziel_AWK:=ziel;
+        sk:=Axis.LastNomPosition;
+        vk:=Axis.LastNomVelocity;
+        Restweg:=Distance;
+        ziel:=Restweg;
+        ZielStrich:=ziel/aufl;
+        Err_DW_str:=Axis.Err;
+        Err_DW_str.SWLimitMinExceeded:=false;
+        Err_DW_str.SWLimitMaxExceeded:=false;
+        Axis.Err.StartErr:=Err_DW<>DW#16#0 OR Axis.AxisState=6 OR Axis.AxisState=8 OR Axis.ManEnable;
+        IF NOT Axis.Err.StartErr 
+        THEN
+            Axis.Err.DataErr:=  (v_max<=0.0 OR
+                                 a_1<=0.0 OR
+                                 b<=0.0) OR 
+                                (Axis.LastNomDeceleration<>b AND
+                                vk<>0.0) OR
+                                ABS(ziel_AWK)>1.6777216e+007;
+            Axis.Err.TargetErr:=ABS(ZielStrich)>1.6777216e+007  OR
+                                (NOT Axis.AxisType AND Axis.SWLimitEnable AND Axis.Sync) AND   
+                                (ziel_AWK>=Axis.AxisLimitMax OR ziel_AWK<=Axis.AxisLimitMin);
+                              
+        END_IF; 
+        Err_DW_str:=Axis.Err; 
+        Err_DW_str.SWLimitMinExceeded:=false;
+        Err_DW_str.SWLimitMaxExceeded:=false;
+        IF Err_DW<>DW#16#0
+        THEN
+            Axis.Error:=true;
+            Error:=true;
+            Zustand:=4;
+        ELSE
+            IF Axis.AxisType  
+            THEN
+                Hilf_DI:=Axis.LageIstwert_DI;
+                Axis.LageIstwert_DI:=(Axis.LageIstwert_DI-Axis.PositionOffset) MOD
+                                      Axis.AchsLaenge_DI + Axis.PositionOffset;
+                Hilf_DI:=Hilf_DI-Axis.LageIstwert_DI;
+                Hilf_R:=DINT_TO_REAL(Hilf_DI)*aufl;
+                sk:=sk-Hilf_R;
+                Axis.RundKorrektur:=Axis.RundKorrektur+Hilf_R;
+                Axis.InternalActPos:=Axis.InternalActPos-Hilf_R;                     
+            END_IF;
+            Axis.InternalPosOffset:=Axis.InternalPosOffset+sk;
+            Axis.LastInternalPosOffset:=Axis.LastInternalPosOffset+sk;
+            Axis.InternalActPos:=Axis.InternalActPos-sk;
+            Axis.VLastNomPosition:=Axis.VLastNomPosition-Axis.LastNomPosition;
+            Axis.LastNomPosition:=0.0;
+            Axis.LastNomDeceleration:=b;
+           
+            IF vk=0.0 
+            THEN
+                IF Restweg<0.0
+                THEN
+                    a_1:=-a_1;
+                    b:=-b;
+                    v_max:=-v_max;
+                END_IF;
+                b0:=0.0;
+                bk1:=b;
+            ELSE
+                a_1_B[7]:=vk_B[7];
+                b_B[7]:=vk_B[7];
+                v_max_B[7]:=vk_B[7];
+                b0:=b;
+                bk1:=b;
+            END_IF;
+            Zustand:=2;
+            Axis.Coord:=Coord;
+            Axis.AxisState:=3;
+        END_IF;  
+    END_IF;     
+END_IF;
+IF Zustand=2 OR Zustand=3
+THEN
+    vk:=Axis.LastNomVelocity;
+    sk:=Axis.LastNomPosition;
+    Bremsweg:=vk*vk*0.5/bk1;
+    Restweg:=ziel-sk;
+    IF Axis.Error
+    THEN
+        Err_DW_str:=Axis.Err;
+        IF Restweg>0.0 AND Err_DW_str.SWLimitMinExceeded
+        THEN
+            Err_DW_str.SWLimitMinExceeded:=false;
+        END_IF;
+        IF Restweg<0.0 AND Err_DW_str.SWLimitMaxExceeded
+        THEN
+            Err_DW_str.SWLimitMaxExceeded:=false;
+        END_IF;
+        IF Err_DW=DW#16#0 THEN Error_alt:=true; END_IF;
+        IF NOT Error_alt
+        THEN
+            Error:=true;
+            Error_alt:=true;
+            IF Err_w.w1<>W#16#0
+            THEN
+                Zustand:=4;
+            ELSE
+                IF Zustand=2
+                THEN
+                    ziel:=sk+Bremsweg;
+                    Restweg:=Bremsweg;
+                END_IF;
+            END_IF;
+        END_IF;
+    END_IF;
+    IF Axis.Coord<>Coord OR Axis.ManEnable
+    THEN
+        CommandAborted:=true;
+        Zustand:=4;
+    END_IF;
+END_IF;      
+ 
+IF Zustand=2
+THEN
+    IF Restweg=0.0 AND vk<>0.0
+    THEN
+        Restweg:=-Bremsweg;
+    END_IF;
+    over:=ABS(Axis.Override)/100.0;
+    IF over>1.0 THEN over:=1.0; END_IF;
+    v_over:=v_max*over;
+    IF v_over<>0.0
+    THEN
+        vv:=vk/v_over;
+    ELSE
+        vv:=2.0;
+    END_IF;
+    IF Bremsweg<>0.0
+    THEN
+        RB:=Restweg/Bremsweg;
+    ELSE
+        RB:=2.0;
+    END_IF;
+    IF Restweg<>0.0
+    THEN
+        IF RB>1.0
+        THEN
+            b0:=0.0;
+            IF vv<1.0
+            THEN
+                Bereich:=1;
+                vk1:=a_1*ta+vk;
+            ELSIF vv=1.0
+            THEN
+                Bereich:=2;
+                vk1:=vk;
+            ELSE 
+                Bereich:=6;
+                vk1:=vk-(bk1*ta);
+                IF vk1*vk<=0.0 OR
+                   vk=0.0 AND
+                   v_over=0.0
+                THEN
+                    vk1:=0.0;
+                END_IF;
+            END_IF;
+        ELSE
+            IF RB<1.0 AND b0<>0.0
+            THEN
+                Bereich:=4;
+                bk1:=b0;
+            ELSE
+                Bereich:=3;
+                b0:=0.0;
+            END_IF;   
+        END_IF;
+    ELSE
+        Bereich:=5;    
+    END_IF;  
+    IF Bereich=1 OR Bereich=2 OR Bereich=6
+    THEN
+        IF (vk1-v_over)*
+           (vk-v_over)<=0.0 AND
+           vk<>v_over
+        THEN
+            vk1:=v_over;
+        END_IF;
+        delta_s:=(vk+vk1)*taHalbe;
+        Bremsweg:=vk1*vk1*0.5/bk1;
+        IF Bremsweg<>0.0 AND
+           vk<>0.0
+        THEN
+            IF ABS((Restweg-delta_s)/Bremsweg)<1.0
+            THEN
+                bk1:=vk*vk*0.5/Restweg;
+                Bereich:=3;
+            ELSE      
+                bk1:=b;   
+            END_IF;
+        ELSE 
+            bk1:=b;    
+        END_IF;     
+        sk1:=sk+delta_s;
+    END_IF;
+    IF Bereich=3
+    THEN
+        vk1:=vk-bk1*ta;
+        IF vk1*vk<=0.0  OR
+           (vk=0.0 AND
+           v_over=0.0)
+        THEN
+            vk1:=0.0;
+        END_IF;
+        sk1:=(vk+vk1)*taHalbe+sk;
+    ELSIF Bereich=4
+    THEN
+        vk1:=vk-bk1*ta;
+        IF vk1*vk<=0.0
+        THEN
+            vk1:=0.0;
+            b0:=0.0;
+            a_1:=-a_1;
+            b:=-b;
+            bk1:=b;
+            v_max:=-v_max;
+        END_IF;
+        sk1:=(vk+vk1)*taHalbe+sk;
+    ELSIF Bereich=5
+    THEN
+        vk1:=0.0;
+        sk1:=ziel;           
+        Zustand:=3;
+    END_IF;
+    IF (sk1-ziel)*(sk-ziel)<=0.0 AND
+       Bereich<>4
+    THEN
+        sk1:=ziel;
+        vk1:=0.0;
+    END_IF;
+    Axis.InternalNomPosition:=sk1;
+    Axis.NomVelocity:=vk1;
+    Axis.RemainingDistance:=ziel-sk1; 
+ELSIF Zustand=3
+THEN
+    IF Axis.AxisState=2
+    THEN 
+        IF NOT Axis.Error
+        THEN
+            Done:=true;
+        END_IF;
+        Busy:=false;
+        Zustand:=5;
+    ELSIF Error_alt
+    THEN
+        Axis.AxisState:=8;
+    ELSE 
+        Axis.AxisState:=5;      
+    END_IF;
+ELSIF Zustand=4
+THEN
+    Busy:=false;
+    Zustand:=5;
+ELSIF Zustand=5
+THEN
+    IF NOT Execute
+    THEN
+        Done:=false;
+        CommandAborted:=false;
+        Error:=false;
+        Busy:=false;
+        Zustand:=1;
+    END_IF;
+END_IF;     
+END_FUNCTION_BLOCK

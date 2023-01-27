@@ -1,0 +1,70 @@
+FUNCTION_BLOCK FB36  // OutputUniversal
+TITLE ='Universal output driver'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : OutUniv
+VERSION : '2.0'
+ 
+ 
+VAR_INPUT
+  EnableDrive : BOOL ;    //1=Enable analog output
+  IntAtMaxVelocity : INT  := 27648;    //Integer value at MaxVelocity
+  OutErr : BOOL ;    //1=Output module error
+END_VAR
+VAR_OUTPUT
+  OutputValue : INT ;    //Output value setpoint
+  OutValAbs : INT ;    //Absolute value of the output value setpoint
+  OutValSign : BOOL ;    //1=Negative sign of the output value setpoint
+END_VAR
+VAR_IN_OUT
+  Axis : UDT1 ;     //Global axis data
+  Init : BOOL ;    //1=Initialize block
+END_VAR
+VAR
+  Velo2Volt : REAL ;    //internal use
+  Volt2Int : REAL ;    //internal use
+END_VAR
+VAR_TEMP
+  OutputValue_R : REAL ;    //internal use
+  OutputValue_B AT OutputValue_R : ARRAY[0..31] OF BOOL;
+  vz : BOOL ;    //internal use
+END_VAR
+BEGIN
+ 
+IF Init
+THEN
+    Init:=false;
+    OutputValue:=0;
+    OutValAbs:=0;
+    OutValSign:=false;
+    Velo2Volt:=INT_TO_REAL(Axis.PolarityDrive)*Axis.DriveInputAtMaxVel/Axis.MaxVelocity;
+    Volt2Int:=INT_TO_REAL(IntAtMaxVelocity)/Axis.DriveInputAtMaxVel;
+END_IF;
+ 
+IF OutErr 
+THEN
+    Axis.Error:=true;
+    Axis.Err.OutputErr:=true;
+END_IF;
+ 
+OutputValue_R:=(Axis.OutVelocity*Velo2Volt+Axis.OffsetCompensation)*Volt2Int;
+ 
+IF ABS(OutputValue_R)>INT_TO_REAL(IntAtMaxVelocity)
+THEN
+      vz:=OutputValue_B[7]; // save sign of real number : cool trick
+      OutputValue_R:=INT_TO_REAL(IntAtMaxVelocity);
+      OutputValue_B[7]:=vz; // restore sign
+END_IF; 
+ 
+IF NOT EnableDrive  OR OutErr OR Axis.Sim
+THEN
+    OutputValue:=0;
+    OutValAbs:=0;
+    OutValSign:=false;
+ELSE
+    OutputValue:=REAL_TO_INT(OutputValue_R);
+    OutValAbs:=ABS(OutputValue);
+    OutValSign:=OutputValue<0;
+END_IF;
+ 
+END_FUNCTION_BLOCK

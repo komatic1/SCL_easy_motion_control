@@ -1,0 +1,353 @@
+FUNCTION_BLOCK FB125
+TITLE ='Input driver for SM338'
+AUTHOR : EMC
+FAMILY : EMC2
+NAME : EncSM338
+VERSION : '2.1'
+ 
+ 
+VAR_INPUT
+  EncErr : BOOL ;    //1=Encoder error
+END_VAR
+VAR_IN_OUT
+  Axis : UDT1 ;     //Global axis data
+  Init : BOOL  := TRUE;    //1=Initialize block
+  ReadDiagErr : BOOL  := TRUE;    //1=Read data record 1 (DS1)
+END_VAR
+VAR
+  Freeze : BOOL ;    //1=Freeze at encoder input
+  JobErr : INT ;    //Error reported while reading DS1
+  DiagStatus : STRUCT    
+   MDL_DEFECT : BOOL ;    //Module defective
+   INT_FAULT : BOOL ;    //Internal fault
+   EXT_FAULT : BOOL ;    //External fault
+   PNT_INFO : BOOL ;    //Point information
+   EXT_VOLTAGE : BOOL ;    //External voltage low
+   FLD_CONNCTR : BOOL ;    //Field wiring connector missing
+   NO_CONFIG : BOOL ;    //Module has no configuration data
+   CONFIG_ERR : BOOL ;    //Module has configuration error
+   MDL_TYPE : BYTE ;    //Type of module
+   SUB_NDL_ERR : BOOL ;    //Sub-Module is missing or has error
+   COMM_FAULT : BOOL ;    //Communication fault
+   MDL_STOP : BOOL ;    //Module is stopped
+   WTCH_DOG_FLT : BOOL ;    //Watch dog timer stopped module
+   INT_PS_FLT : BOOL ;    //Internal power supply fault
+   PRIM_BATT_FLT : BOOL ;    //Primary battery is in fault
+   BCKUP_BATT_FLT : BOOL ;    //Backup battery is in fault
+   RESERVED_2 : BOOL ;    //Reserved for system
+   RACK_FLT : BOOL ;    //Rack fault, only for bus interface module
+   PROC_FLT : BOOL ;    //Processor fault
+   EPROM_FLT : BOOL ;    //EPROM fault
+   RAM_FLT : BOOL ;    //RAM fault
+   ADU_FLT : BOOL ;    //ADU fault
+   FUSE_FLT : BOOL ;    //Fuse fault
+   HW_INTR_FLT : BOOL ;    //Hardware interupt input in fault
+   RESERVED_3 : BOOL ;    //Reserved for system 
+   CH_TYPE : BYTE ;    //Channel type
+   LGTH_DIA : BYTE ;    //Diagnostics data length per channel
+   CH_NO : BYTE ;    //Channel number
+   GRP_ERR0 : BOOL ;    //Group error channel 0
+   GRP_ERR1 : BOOL ;    //Group error channel 1
+   GRP_ERR2 : BOOL ;    //Group error channel 2
+   bit7_3 : BOOL ;   
+   bit7_4 : BOOL ;   
+   bit7_5 : BOOL ;   
+   bit7_6 : BOOL ;   
+   bit7_7 : BOOL ;   
+   CH0_INTF : BOOL ;    //Configuration or parameterization error (internal channel malfunction)
+   CH0_EXTF : BOOL ;    //Encoder malfunction (external channel malfunction)
+   bit8_2 : BOOL ;   
+   bit8_3 : BOOL ;   
+   bit8_4 : BOOL ;   
+   bit8_5 : BOOL ;   
+   bit8_6 : BOOL ;   
+   bit8_7 : BOOL ;   
+   CH1_INTF : BOOL ;    //Configuration or parameterization error (internal channel malfunction)
+   CH1_EXTF : BOOL ;    //Encoder malfunction (external channel malfunction)
+   bit9_2 : BOOL ;   
+   bit9_3 : BOOL ;   
+   bit9_4 : BOOL ;   
+   bit9_5 : BOOL ;   
+   bit9_6 : BOOL ;   
+   bit9_7 : BOOL ;   
+   CH2_INTF : BOOL ;    //Configuration or parameterization error (internal channel malfunction)
+   CH2_EXTF : BOOL ;    //Encoder malfunction (external channel malfunction)
+   bit10_2 : BOOL ;   
+   bit10_3 : BOOL ;   
+   bit10_4 : BOOL ;   
+   bit10_5 : BOOL ;   
+   bit10_6 : BOOL ;   
+   bit10_7 : BOOL ;   
+   byte11 : BYTE ;   
+   dword12 : DWORD ;   
+  END_STRUCT ;   
+  DiagStatus_dw AT DiagStatus : DWORD;
+  DiagStatus_b AT DiagStatus : ARRAY[0..127] OF BOOL;
+  GeberAlt_DI : DINT ;    //internal use
+  Addr_ActPos_DI : INT ;    //internal use
+  v_Faktor : REAL ;    //internal use
+  MaxZahl : DINT ;    //internal use
+  MaxZahlHalb : DINT ;    //internal use
+  PEStatus : DWORD ;    //internal use
+  PEStatus_b AT PEStatus : ARRAY[0..31] OF BOOL;
+  Richtungsanpassung : INT  := 1;    //internal use
+  PositionOffset : DINT ;    //internal use
+  BGAdr : WORD ;    //internal use
+  BGTyp : BYTE ;    //internal use
+  DiagFehler : BOOL ;    //internal use
+  EncErr_alt : BOOL ;    //internal use
+  Taktsynchron : BOOL ;    //internal use
+  sRDREC : SFB52;   
+END_VAR
+VAR_TEMP
+  Geber_DI : DINT ;    //internal use
+  LageDiff_DI : DINT ;    //internal use
+  Addr_InChannel : INT ;    //internal use
+  TruncKorr : REAL ;    //internal use
+  TruncKorr_DI : DINT ;    //internal use
+  Err_DW : DWORD ;    //internal use
+  Err_DW_str AT Err_DW : STRUCT
+     SWLimitMinExceeded : BOOL ;    //1=Min. SW limit switch exceeded
+     SWLimitMaxExceeded : BOOL ;    //1=Max. SW limit switch exceeded
+     TargetErr : BOOL ;    //1=Target beyond travel range
+     NoSync : BOOL ;    //1=Axis not synchronized
+     DirectionErr : BOOL ;    //1=Motion not allowed in direction entered
+     DataErr : BOOL ;    //1=Invalid motion FB parameter
+     StartErr : BOOL ;    //1=Start not possible in current axis state
+     DistanceErr : BOOL ;    //1=Motion is too far
+     MasterErr : BOOL ;    //1=Master axis error with hard stop or wrong axis status
+     bit09 : BOOL ;   
+     bit10 : BOOL ;   
+     bit11 : BOOL ;   
+     bit12 : BOOL ;   
+     bit13 : BOOL ;   
+     bit14 : BOOL ;   
+     bit15 : BOOL ;   
+     StoppedMotion : BOOL ;    //1=Axis is in stop and must be acknowledged
+     EnableDriveErr : BOOL ;    //1=Drive enable missing
+     FollowingDistErr : BOOL ;    //1=Max. following distance exceeded
+     StandstillErr : BOOL ;    //1=Outside standstill range
+     TargetApproachErr : BOOL ;    //1=Target approach error
+     EncoderErr : BOOL ;    //1=Encoder error
+     OutputErr : BOOL ;    //1=Output driver error
+     ConfigErr : BOOL ;    //1=Axis data incorrectly configured
+     DriveErr : BOOL ;    //1=Drive error
+     bit25 : BOOL ;   
+     bit26 : BOOL ;   
+     bit27 : BOOL ;   
+     bit28 : BOOL ;   
+     bit29 : BOOL ;   
+     bit30 : BOOL ;   
+     bit31 : BOOL ;   
+  END_STRUCT ; 
+  GeberAmAchsende : DINT ;    //internal use
+  GeberAmAchsanfang : DINT ;    //internal use
+  Hilf_DI : DINT ;    //internal use
+  SFCErr : INT ;    //Rьckgabewert des SFC6 (RD_SINFO) lokal, da keine relevante Info
+  TOP_SI : STRUCT    
+   EV_CLASS : BYTE ;   
+   EV_NUM : BYTE ;   
+   PRIORITY : BYTE ;   
+   NUM : BYTE ;   
+   TYP2_3 : BYTE ;   
+   TYP1 : BYTE ;   
+   ZI1 : WORD ;   
+   ZI2_3 : DWORD ;   
+  END_STRUCT ;   
+  START_UP_SI : STRUCT    
+   EV_CLASS : BYTE ;   
+   EV_NUM : BYTE ;   
+   PRIORITY : BYTE ;   
+   NUM : BYTE ;   
+   TYP2_3 : BYTE ;   
+   TYP1 : BYTE ;   
+   ZI1 : WORD ;   
+   ZI2_3 : DWORD ;   
+  END_STRUCT ;   
+END_VAR
+BEGIN
+ 
+IF NOT Init AND NOT EncErr AND EncErr_alt THEN
+    Init:=true;
+    Axis.Err.EncoderErr:=true;
+    Axis.Error:=true;
+END_IF;
+ 
+IF Init THEN
+    Addr_InChannel:=Axis.InputChannelNo*4+Axis.InputModuleInAddr;
+    Addr_ActPos_DI:=Addr_InChannel;
+    v_Faktor:=Axis.aufl/Axis.Sample_T;
+    PEStatus:=DW#16#0;
+    DiagFehler:=false;
+    ReadDiagErr:=true;
+    Axis.EinInitLaeuft:=true;
+    Axis.EintreiberFahrbereit:=false;
+    EncErr_alt:=false;
+    Axis.DoneRef:=false;
+    Axis.ExecRef:=0;
+    Axis.EncoderType:=true;
+    MaxZahl:=Axis.AbsGeberLaenge_DI;
+    MaxZahlHalb:=MaxZahl/2;
+    Richtungsanpassung:=Axis.PolarityEncoder;
+    IF Axis.InputModuleInAddr<=Axis.InputModuleOutAddr THEN
+        BGAdr:=INT_TO_WORD(Axis.InputModuleInAddr);
+        BGTyp:=B#16#54;
+    ELSE
+        BGAdr:=INT_TO_WORD(Axis.InputModuleOutAddr);
+        BGAdr:=BGAdr OR W#16#8000;
+        BGTyp:=B#16#55;
+    END_IF;
+   
+    SFCErr:=RD_SINFO(TOP_SI :=  TOP_SI
+         ,START_UP_SI :=  START_UP_SI
+         );
+       
+    SFCErr:=BYTE_TO_INT(TOP_SI.NUM);
+    Taktsynchron:=SFCErr>=61 AND SFCErr<=64;
+END_IF;
+ 
+IF Axis.Sim OR EncErr THEN
+    PEStatus:=DW#16#0;   
+    ReadDiagErr:=false;
+ELSE
+    IF Taktsynchron THEN
+        PEStatus:=ID[Addr_ActPos_DI];
+    ELSE
+        PEStatus:=PID[Addr_ActPos_DI];
+    END_IF;
+ 
+ 
+    Axis.EncoderValue:=DWORD_TO_DINT(PEStatus AND DW#16#1FFFFFF);
+   
+    IF ReadDiagErr THEN
+        sRDREC     (REQ := true
+                    ,ID :=BGAdr  
+                    ,INDEX := 1
+                    ,MLEN := 16
+                    ,RECORD := DiagStatus
+                    );
+        ReadDiagErr:=sRDREC.BUSY;
+        JobErr:=DWORD_TO_INT(SHR(IN:=sRDREC.STATUS,N:=8));
+        IF (INT_TO_DINT(JobErr)>=32930 AND
+            INT_TO_DINT(JobErr)<=32932)  OR
+            (INT_TO_DINT(JobErr)>=32960 AND
+            INT_TO_DINT(JobErr)<=32975)
+        THEN
+            ReadDiagErr:=true;
+        END_IF;
+        IF NOT ReadDiagErr THEN
+            IF JobErr>=0 THEN
+                IF DiagStatus.MDL_DEFECT THEN
+                    IF (DW#16#F000FFFF AND DiagStatus_dw) <> 0 THEN
+                        DiagFehler:=true;
+                    ELSE
+                        DiagFehler:=DiagStatus_b[INT_TO_DINT(Axis.InputChannelNo)+56];
+                    END_IF;
+                ELSE
+                    DiagFehler:=false;
+                END_IF;
+            ELSE   
+                DiagFehler:=true;
+            END_IF;
+        END_IF;
+    END_IF;
+END_IF;   
+ 
+Geber_DI:=Axis.EncoderValue;
+Freeze:=PEStatus_b[7];
+ 
+IF EncErr THEN
+    Axis.Err.EncoderErr:=true;
+    Axis.Error:=true;
+    EncErr_alt:=true;
+ELSE
+    IF Init THEN
+        PositionOffset:=Axis.PositionOffset;
+        GeberAmAchsanfang:=ROUND((Axis.AxisLimitMin-Axis.RefPoint)/
+                           Axis.aufl*INT_TO_REAL(Richtungsanpassung)+
+                            DINT_TO_REAL(PositionOffset)+DINT_TO_REAL(MaxZahl))
+                            MOD MaxZahl;
+        GeberAmAchsende:=ROUND((Axis.AxisLimitMax-Axis.RefPoint)/
+                           Axis.aufl*INT_TO_REAL(Richtungsanpassung)+
+                            DINT_TO_REAL(PositionOffset)+DINT_TO_REAL(MaxZahl))
+                            MOD MaxZahl;
+        IF Richtungsanpassung=-1 THEN
+            Hilf_DI:=GeberAmAchsanfang;
+            GeberAmAchsanfang:=GeberAmAchsende;
+            GeberAmAchsende:=Hilf_DI;
+        END_IF;
+       
+        Hilf_DI:=0;
+        IF GeberAmAchsanfang>GeberAmAchsende THEN
+            IF PositionOffset>=GeberAmAchsanfang THEN
+                IF Geber_DI<=GeberAmAchsende THEN
+                    Hilf_DI:=MaxZahl;
+                END_IF;
+            END_IF;
+            IF PositionOffset<=GeberAmAchsende THEN
+                IF Geber_DI>=GeberAmAchsanfang THEN
+                    Hilf_DI:=-MaxZahl;
+                END_IF;
+            END_IF;
+        END_IF;
+ 
+        Axis.LageIstwert_DI:=(Geber_DI+Hilf_DI-PositionOffset)*
+                         INT_TO_DINT(Richtungsanpassung)+PositionOffset;
+        GeberAlt_DI:=Geber_DI;
+    END_IF;
+   
+    IF DiagFehler THEN
+        Axis.Err.EncoderErr:=true;
+        Axis.Error:=true;
+    ELSE
+        IF Axis.ExecRef=1 THEN
+            Axis.InternalNomPosition:=0.0;
+            Axis.LastNomPosition:=0.0;
+            Axis.LageIstwert_DI:=Geber_DI;
+            Axis.PositionOffset:=Geber_DI;
+            Axis.InternalPosOffset:=Axis.RefPoint;
+            Axis.DoneRef:=true;
+        ELSE
+            Axis.DoneRef:=false;
+        END_IF;
+        LageDiff_DI:=(Geber_DI-GeberAlt_DI)*INT_TO_DINT(Richtungsanpassung);
+        IF LageDiff_DI<-MaxZahlHalb THEN
+            LageDiff_DI:=LageDiff_DI+MaxZahl;
+        END_IF;
+        IF LageDiff_DI>MaxZahlHalb THEN
+            LageDiff_DI:=LageDiff_DI-MaxZahl;
+        END_IF;
+        Axis.LageIstwert_DI:=Axis.LageIstwert_DI+LageDiff_DI;
+        Axis.ActPosition:=DINT_TO_REAL(Axis.LageIstwert_DI-Axis.PositionOffset)*
+                          Axis.aufl+Axis.RefPoint;
+        Axis.InternalActPos:=Axis.ActPosition-Axis.InternalPosOffset;
+        GeberAlt_DI:=Geber_DI;
+        Axis.ActVelocity:=DINT_TO_REAL(LageDiff_DI)*v_Faktor;
+        IF Axis.AxisType THEN
+            TruncKorr:=(Axis.ActPosition-Axis.AxisLimitMin)/Axis.AchsLaenge;
+            TruncKorr_DI:=TRUNC(TruncKorr);
+            IF TruncKorr<0.0  AND DINT_TO_REAL(TruncKorr_DI)<>TruncKorr THEN
+                TruncKorr_DI:=TruncKorr_DI-1;
+            END_IF;
+            Axis.ActPosition:=Axis.ActPosition-DINT_TO_REAL(TruncKorr_DI)*Axis.AchsLaenge;
+        ELSE
+            Axis.Err.SWLimitMinExceeded:=Axis.SWLimitEnable and Axis.Sync AND
+                                         Axis.ActPosition<=Axis.AxisLimitMin;
+            Axis.Err.SWLimitMaxExceeded:=Axis.SWLimitEnable and Axis.Sync AND
+                                         Axis.ActPosition>=Axis.AxisLimitMax;
+            Err_DW_str:=Axis.Err;                            
+            Axis.Error:=Err_DW<>0;                            
+         END_IF;
+    END_IF;
+END_IF;
+ 
+IF Init THEN
+    IF NOT ReadDiagErr THEN
+        Init:=false;
+        Axis.EinInitLaeuft:=false;
+    END_IF;
+    Axis.InternalNomPosition:=Axis.InternalActPos;
+    Axis.LastNomPosition:=Axis.InternalActPos;
+    Axis.VLastNomPosition:=Axis.InternalActPos;
+END_IF;
+END_FUNCTION_BLOCK
